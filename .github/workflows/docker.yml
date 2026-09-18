@@ -47,4 +47,4 @@ jobs:
             ghcr.io/rafaeldgruenevald/openplc-runtime:sha-${{ github.sha }}
 
           build-args: |
-            RUNTIME_VERSION=${{ github.sha }}
+            RUNTIME_VERSION=4.0.0
