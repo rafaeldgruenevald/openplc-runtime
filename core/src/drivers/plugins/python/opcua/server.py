@@ -32,6 +32,7 @@ try:
     from .user_manager import OpenPLCUserManager
     from .callbacks import PermissionCallbackHandler
     from .opcua_types import VariableNode
+    from .nodeset_loader import import_nodesets
 except ImportError:
     from opcua_logging import log_info, log_warn, log_error, log_debug
     from opcua_security import OpcuaSecurityManager
@@ -41,6 +42,7 @@ except ImportError:
     from user_manager import OpenPLCUserManager
     from callbacks import PermissionCallbackHandler
     from opcua_types import VariableNode
+    from nodeset_loader import import_nodesets
 
 from shared import SafeBufferAccess
 from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
@@ -129,6 +131,10 @@ class OpcuaServerManager:
             # Setup server
             if not await self._setup_server():
                 log_error("Failed to setup server")
+                return
+
+            if not await self._import_configured_nodesets():
+                log_warn("Failed to import OPC UA NodeSets")
                 return
 
             # Create address space (nodes)
@@ -247,6 +253,76 @@ class OpcuaServerManager:
 
         except Exception as e:
             log_error(f"Failed to setup OPC-UA server: {e}")
+            traceback.print_exc()
+            return False
+
+    async def _import_configured_nodesets(self) -> bool:
+        """
+        Import optional NodeSet XML models.
+
+        This development implementation reads paths from the
+        OPENPLC_OPCUA_NODESETS environment variable.
+
+        Multiple paths are separated using the platform path
+        separator. On Linux, this separator is ':'.
+
+        The final implementation will move the model configuration
+        into the typed opcua.json configuration.
+        """
+
+        if not self.server:
+            log_error(
+                "Cannot import NodeSets because the OPC-UA server "
+                "is not initialized"
+            )
+            return False
+
+        raw_value = os.getenv(
+            "OPENPLC_OPCUA_NODESETS",
+            "",
+        ).strip()
+
+        if not raw_value:
+            log_debug(
+                "No optional OPC UA NodeSets configured"
+            )
+            return True
+
+        paths = [
+            item.strip()
+            for item in raw_value.split(os.pathsep)
+            if item.strip()
+        ]
+
+        if not paths:
+            log_debug(
+                "OPENPLC_OPCUA_NODESETS contained no usable paths"
+            )
+            return True
+
+        log_info(
+            f"Found {len(paths)} configured OPC UA "
+            "NodeSet file(s)"
+        )
+
+        try:
+            results = await import_nodesets(
+                server=self.server,
+                raw_paths=paths,
+            )
+
+            log_info(
+                f"Successfully imported {len(results)} "
+                "configured OPC UA NodeSet file(s)"
+            )
+
+            return True
+
+        except Exception as exc:
+            log_error(
+                "Failed to import configured OPC UA NodeSets: "
+                f"{exc}"
+            )
             traceback.print_exc()
             return False
 
