@@ -1,0 +1,255 @@
+<?xml version='1.0' encoding='utf-8'?>
+<UANodeSet xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd" xmlns:uax="http://opcfoundation.org/UA/2008/02/Types.xsd">
+  <NamespaceUris>
+    <Uri>http://opcfoundation.org/UA/DI/</Uri>
+    <Uri>http://opcfoundation.org/UA/PADIM/</Uri>
+    <Uri>urn:openplc:test:padim-device</Uri>
+  </NamespaceUris>
+  <Models>
+    <Model ModelUri="urn:openplc:test:padim-device" Version="1.0.0">
+      <RequiredModel ModelUri="http://opcfoundation.org/UA/DI/" Version="1.05.0" PublicationDate="2025-11-15T00:00:00Z" />
+      <RequiredModel ModelUri="http://opcfoundation.org/UA/Dictionary/IRDI" Version="1.02.0" PublicationDate="2025-11-10T00:00:00Z" />
+      <RequiredModel ModelUri="http://opcfoundation.org/UA/PADIM/" Version="1.02.0" PublicationDate="2025-11-10T00:00:00Z" />
+    </Model>
+  </Models>
+  <Aliases>
+    <Alias Alias="Int32">i=6</Alias>
+    <Alias Alias="Float">i=10</Alias>
+    <Alias Alias="String">i=12</Alias>
+    <Alias Alias="LocalizedText">i=21</Alias>
+    <Alias Alias="Organizes">i=35</Alias>
+    <Alias Alias="HasTypeDefinition">i=40</Alias>
+    <Alias Alias="HasComponent">i=47</Alias>
+    <Alias Alias="HasProperty">i=46</Alias>
+    <Alias Alias="Range">i=884</Alias>
+    <Alias Alias="EUInformation">i=887</Alias>
+  </Aliases>
+  <UAObject NodeId="ns=3;s=PADIMDevices" BrowseName="3:PADIMDevices" ParentNodeId="i=85">
+    <DisplayName>PADIMDevices</DisplayName>
+    <Description>PADIMDevices</Description>
+    <References>
+      <Reference ReferenceType="Organizes" IsForward="false">i=85</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=61</Reference>
+      <Reference ReferenceType="Organizes">ns=3;s=PT101</Reference>
+    </References>
+  </UAObject>
+  <UAObject NodeId="ns=3;s=PT101" BrowseName="3:PT101" ParentNodeId="ns=3;s=PADIMDevices">
+    <DisplayName>PT101 Pressure Transmitter</DisplayName>
+    <References>
+      <Reference ReferenceType="Organizes" IsForward="false">ns=3;s=PADIMDevices</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=2;i=1009</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.Manufacturer</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.ManufacturerUri</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.Model</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SerialNumber</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SoftwareRevision</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.HardwareRevision</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.ProductCode</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.DeviceHealth</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.ProductInstanceUri</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.AssetId</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.RevisionCounter</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SignalSet</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=3;s=PT101.AssetId" BrowseName="1:AssetId" ParentNodeId="ns=3;s=PT101" DataType="String" AccessLevel="3" UserAccessLevel="3">
+    <DisplayName>Asset ID</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>PT101</uax:String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.DeviceHealth" BrowseName="1:DeviceHealth" ParentNodeId="ns=3;s=PT101" DataType="ns=1;i=6244">
+    <DisplayName>Device diagnostic status</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=63</Reference>
+    </References>
+    <Value>
+      <uax:Int32>0</uax:Int32>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.HardwareRevision" BrowseName="1:HardwareRevision" ParentNodeId="ns=3;s=PT101" DataType="String">
+    <DisplayName>Hardware revision</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>virtual</uax:String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.Manufacturer" BrowseName="1:Manufacturer" ParentNodeId="ns=3;s=PT101" DataType="LocalizedText">
+    <DisplayName>Manufacturer</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:LocalizedText>
+        <uax:Locale />
+        <uax:Text>OpenPLC Project</uax:Text>
+      </uax:LocalizedText>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.ManufacturerUri" BrowseName="1:ManufacturerUri" ParentNodeId="ns=3;s=PT101" DataType="String">
+    <DisplayName>URI manufacturer</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>urn:openplc</uax:String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.Model" BrowseName="1:Model" ParentNodeId="ns=3;s=PT101" DataType="LocalizedText">
+    <DisplayName>Model</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:LocalizedText>
+        <uax:Locale />
+        <uax:Text>PADIM Pressure Transmitter PoC</uax:Text>
+      </uax:LocalizedText>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.ProductCode" BrowseName="1:ProductCode" ParentNodeId="ns=3;s=PT101" DataType="String">
+    <DisplayName>Product code</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>OPENPLC-PT</uax:String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.ProductInstanceUri" BrowseName="1:ProductInstanceUri" ParentNodeId="ns=3;s=PT101" DataType="String">
+    <DisplayName>URI product inst.</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>urn:openplc:device:pt101</uax:String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.RevisionCounter" BrowseName="1:RevisionCounter" ParentNodeId="ns=3;s=PT101" DataType="Int32">
+    <DisplayName>Revision counter</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:Int32>1</uax:Int32>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.SerialNumber" BrowseName="1:SerialNumber" ParentNodeId="ns=3;s=PT101" DataType="String">
+    <DisplayName>Serial number</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>PT101-001</uax:String>
+    </Value>
+  </UAVariable>
+  <UAObject NodeId="ns=3;s=PT101.SignalSet" BrowseName="2:SignalSet" ParentNodeId="ns=3;s=PT101">
+    <DisplayName>Signal Set</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=2;i=1021</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SignalSet.Pressure</Reference>
+    </References>
+  </UAObject>
+  <UAObject NodeId="ns=3;s=PT101.SignalSet.Pressure" BrowseName="3:Pressure" ParentNodeId="ns=3;s=PT101.SignalSet">
+    <DisplayName>Pressure Signal</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101.SignalSet</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=2;i=1022</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SignalSet.Pressure.SignalTag</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SignalSet.Pressure.AnalogSignal</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=3;s=PT101.SignalSet.Pressure.AnalogSignal" BrowseName="2:AnalogSignal" ParentNodeId="ns=3;s=PT101.SignalSet.Pressure" ValueRank="-2" DataType="Float">
+    <DisplayName>Pressure Measurement</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101.SignalSet.Pressure</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=2;i=1121</Reference>
+      <Reference ReferenceType="HasComponent">ns=3;s=PT101.SignalSet.Pressure.AnalogSignal.EngineeringUnits</Reference>
+      <Reference ReferenceType="HasProperty">ns=3;s=PT101.SignalSet.Pressure.AnalogSignal.EURange</Reference>
+    </References>
+    <Value>
+      <uax:Float>12.5</uax:Float>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.SignalSet.Pressure.AnalogSignal.EURange" BrowseName="0:EURange" ParentNodeId="ns=3;s=PT101.SignalSet.Pressure.AnalogSignal" DataType="Range">
+    <DisplayName>EURange</DisplayName>
+    <References>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=3;s=PT101.SignalSet.Pressure.AnalogSignal</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:ExtensionObject>
+        <uax:TypeId>
+          <uax:Identifier>i=884</uax:Identifier>
+        </uax:TypeId>
+        <uax:Body>
+          <uax:Range>
+            <uax:Low>0.0</uax:Low>
+            <uax:High>16.0</uax:High>
+          </uax:Range>
+        </uax:Body>
+      </uax:ExtensionObject>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.SignalSet.Pressure.AnalogSignal.EngineeringUnits" BrowseName="0:EngineeringUnits" ParentNodeId="ns=3;s=PT101.SignalSet.Pressure.AnalogSignal" DataType="EUInformation">
+    <DisplayName>Unit</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101.SignalSet.Pressure.AnalogSignal</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:ExtensionObject>
+        <uax:TypeId>
+          <uax:Identifier>i=887</uax:Identifier>
+        </uax:TypeId>
+        <uax:Body>
+          <uax:EUInformation>
+            <uax:NamespaceUri>http://www.opcfoundation.org/UA/units/un/cefact</uax:NamespaceUri>
+            <uax:UnitId>4342098</uax:UnitId>
+            <uax:DisplayName>
+              <uax:Locale />
+              <uax:Text>bar</uax:Text>
+            </uax:DisplayName>
+            <uax:Description>
+              <uax:Locale />
+              <uax:Text>bar</uax:Text>
+            </uax:Description>
+          </uax:EUInformation>
+        </uax:Body>
+      </uax:ExtensionObject>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.SignalSet.Pressure.SignalTag" BrowseName="2:SignalTag" ParentNodeId="ns=3;s=PT101.SignalSet.Pressure" DataType="String" AccessLevel="3" UserAccessLevel="3">
+    <DisplayName>Tag</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101.SignalSet.Pressure</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+  </UAVariable>
+  <UAVariable NodeId="ns=3;s=PT101.SoftwareRevision" BrowseName="1:SoftwareRevision" ParentNodeId="ns=3;s=PT101" DataType="String">
+    <DisplayName>Software revision</DisplayName>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=3;s=PT101</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:String>4.2.2-poc</uax:String>
+    </Value>
+  </UAVariable>
+</UANodeSet>

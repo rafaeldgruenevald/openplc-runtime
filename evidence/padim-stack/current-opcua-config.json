@@ -1,0 +1,425 @@
+[
+  {
+    "name": "opcua_server",
+    "protocol": "OPC-UA",
+    "config": {
+      "format_version": 2,
+      "server": {
+        "name": "OpenPLC OPC UA Server",
+        "application_uri": "urn:openplc:opcua:server",
+        "product_uri": "urn:openplc:runtime",
+        "endpoint_url": "opc.tcp://0.0.0.0:4840/openplc/opcua",
+        "security_profiles": [
+          {
+            "name": "insecure",
+            "enabled": true,
+            "security_policy": "None",
+            "security_mode": "None",
+            "auth_methods": [
+              "Anonymous"
+            ]
+          }
+        ]
+      },
+      "security": {
+        "server_certificate_strategy": "auto_self_signed",
+        "server_certificate_custom": null,
+        "server_private_key_custom": null,
+        "trusted_client_certificates": []
+      },
+      "users": [],
+      "cycle_time_ms": 100,
+      "address_space": {
+        "namespace_uri": "urn:openplc:opcua:namespace",
+        "variables": [],
+        "structures": [
+          {
+            "node_id": "PLC.main.PT101",
+            "browse_name": "PT101",
+            "display_name": "Pt101",
+            "description": "",
+            "fields": [
+              {
+                "name": "Manufacturer",
+                "datatype": "ST_LOCALIZED_TEXT",
+                "size": null,
+                "arr": null,
+                "elem": null,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                },
+                "fields": [
+                  {
+                    "name": "Locale",
+                    "datatype": "STRING",
+                    "size": 127,
+                    "arr": 0,
+                    "elem": 0,
+                    "permissions": {
+                      "viewer": "r",
+                      "operator": "r",
+                      "engineer": "rw"
+                    }
+                  },
+                  {
+                    "name": "Text",
+                    "datatype": "STRING",
+                    "size": 127,
+                    "arr": 0,
+                    "elem": 1,
+                    "permissions": {
+                      "viewer": "r",
+                      "operator": "r",
+                      "engineer": "rw"
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "Model",
+                "datatype": "ST_LOCALIZED_TEXT",
+                "size": null,
+                "arr": null,
+                "elem": null,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                },
+                "fields": [
+                  {
+                    "name": "Locale",
+                    "datatype": "STRING",
+                    "size": 127,
+                    "arr": 0,
+                    "elem": 2,
+                    "permissions": {
+                      "viewer": "r",
+                      "operator": "r",
+                      "engineer": "rw"
+                    }
+                  },
+                  {
+                    "name": "Text",
+                    "datatype": "STRING",
+                    "size": 127,
+                    "arr": 0,
+                    "elem": 3,
+                    "permissions": {
+                      "viewer": "r",
+                      "operator": "r",
+                      "engineer": "rw"
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "ManufacturerUri",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 5,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "SerialNumber",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 6,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "SoftwareRevision",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 7,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "HardwareRevision",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 8,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "ProductCode",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 9,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "ProductInstanceUri",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 10,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "AssetId",
+                "datatype": "STRING",
+                "size": 127,
+                "arr": 0,
+                "elem": 11,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "RevisionCounter",
+                "datatype": "DINT",
+                "size": 4,
+                "arr": 0,
+                "elem": 12,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                }
+              },
+              {
+                "name": "PressureSignal",
+                "datatype": "ST_ANALOG_SIGNAL",
+                "size": null,
+                "arr": null,
+                "elem": null,
+                "permissions": {
+                  "viewer": "r",
+                  "operator": "r",
+                  "engineer": "rw"
+                },
+                "fields": [
+                  {
+                    "name": "Tag",
+                    "datatype": "STRING",
+                    "size": 127,
+                    "arr": 0,
+                    "elem": 13,
+                    "permissions": {
+                      "viewer": "r",
+                      "operator": "r",
+                      "engineer": "rw"
+                    }
+                  },
+                  {
+                    "name": "ProcessValue",
+                    "datatype": "ST_ANALOG_VALUE",
+                    "size": null,
+                    "arr": null,
+                    "elem": null,
+                    "permissions": {
+                      "viewer": "r",
+                      "operator": "r",
+                      "engineer": "rw"
+                    },
+                    "fields": [
+                      {
+                        "name": "Value",
+                        "datatype": "REAL",
+                        "size": 4,
+                        "arr": 0,
+                        "elem": 14,
+                        "permissions": {
+                          "viewer": "r",
+                          "operator": "r",
+                          "engineer": "rw"
+                        }
+                      },
+                      {
+                        "name": "EURange",
+                        "datatype": "ST_RANGE",
+                        "size": null,
+                        "arr": null,
+                        "elem": null,
+                        "permissions": {
+                          "viewer": "r",
+                          "operator": "r",
+                          "engineer": "rw"
+                        },
+                        "fields": [
+                          {
+                            "name": "Low",
+                            "datatype": "LREAL",
+                            "size": 8,
+                            "arr": 0,
+                            "elem": 15,
+                            "permissions": {
+                              "viewer": "r",
+                              "operator": "r",
+                              "engineer": "rw"
+                            }
+                          },
+                          {
+                            "name": "High",
+                            "datatype": "LREAL",
+                            "size": 8,
+                            "arr": 0,
+                            "elem": 16,
+                            "permissions": {
+                              "viewer": "r",
+                              "operator": "r",
+                              "engineer": "rw"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "EngineeringUnits",
+                        "datatype": "ST_EU_INFORMATION",
+                        "size": null,
+                        "arr": null,
+                        "elem": null,
+                        "permissions": {
+                          "viewer": "r",
+                          "operator": "r",
+                          "engineer": "rw"
+                        },
+                        "fields": [
+                          {
+                            "name": "NamespaceUri",
+                            "datatype": "STRING",
+                            "size": 127,
+                            "arr": 0,
+                            "elem": 17,
+                            "permissions": {
+                              "viewer": "r",
+                              "operator": "r",
+                              "engineer": "rw"
+                            }
+                          },
+                          {
+                            "name": "UnitId",
+                            "datatype": "DINT",
+                            "size": 4,
+                            "arr": 0,
+                            "elem": 18,
+                            "permissions": {
+                              "viewer": "r",
+                              "operator": "r",
+                              "engineer": "rw"
+                            }
+                          },
+                          {
+                            "name": "DisplayName",
+                            "datatype": "ST_LOCALIZED_TEXT",
+                            "size": null,
+                            "arr": null,
+                            "elem": null,
+                            "permissions": {
+                              "viewer": "r",
+                              "operator": "r",
+                              "engineer": "rw"
+                            },
+                            "fields": [
+                              {
+                                "name": "Locale",
+                                "datatype": "STRING",
+                                "size": 127,
+                                "arr": 0,
+                                "elem": 19,
+                                "permissions": {
+                                  "viewer": "r",
+                                  "operator": "r",
+                                  "engineer": "rw"
+                                }
+                              },
+                              {
+                                "name": "Text",
+                                "datatype": "STRING",
+                                "size": 127,
+                                "arr": 0,
+                                "elem": 20,
+                                "permissions": {
+                                  "viewer": "r",
+                                  "operator": "r",
+                                  "engineer": "rw"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Description",
+                            "datatype": "ST_LOCALIZED_TEXT",
+                            "size": null,
+                            "arr": null,
+                            "elem": null,
+                            "permissions": {
+                              "viewer": "r",
+                              "operator": "r",
+                              "engineer": "rw"
+                            },
+                            "fields": [
+                              {
+                                "name": "Locale",
+                                "datatype": "STRING",
+                                "size": 127,
+                                "arr": 0,
+                                "elem": 21,
+                                "permissions": {
+                                  "viewer": "r",
+                                  "operator": "r",
+                                  "engineer": "rw"
+                                }
+                              },
+                              {
+                                "name": "Text",
+                                "datatype": "STRING",
+                                "size": 127,
+                                "arr": 0,
+                                "elem": 22,
+                                "permissions": {
+                                  "viewer": "r",
+                                  "operator": "r",
+                                  "engineer": "rw"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "arrays": []
+      }
+    }
+  }
+]

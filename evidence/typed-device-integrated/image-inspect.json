@@ -1,0 +1,69 @@
+[
+    {
+        "Id": "sha256:2fbd3f1edc41b3e994cb7a8cab40ee36a707f915f8545500a7252cab55fc3be6",
+        "RepoTags": [
+            "openplc-custom:nodeset-dev"
+        ],
+        "RepoDigests": [
+            "openplc-custom@sha256:2fbd3f1edc41b3e994cb7a8cab40ee36a707f915f8545500a7252cab55fc3be6"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-09-23T17:50:39.702856899Z",
+        "Config": {
+            "ExposedPorts": {
+                "8443/tcp": {}
+            },
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "RUNTIME_VERSION=dev"
+            ],
+            "Cmd": [
+                "bash",
+                "./start_openplc.sh"
+            ],
+            "WorkingDir": "/workdir",
+            "ArgsEscaped": true,
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "curl -kfsS https://127.0.0.1:8443/api/version >/dev/null || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 90000000000,
+                "Retries": 3
+            }
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 1438112420,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:34467cc93912af891dfee8a3902adf9b4f355a9bca4eaa46f658d1181a21de0d",
+                "sha256:ed2af274f64c3057006f960851930044adbf2af5e696822ccc3ebc79e5d65013",
+                "sha256:2a781cf822974602d0a97ea0656635d626f2c578dcaccd7adffa35a61718bfb5",
+                "sha256:eed5ec4d3cdd63005dd2e20b2334fd01766e571669e20e3ab69fa1873b6b91b4",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:e069bf690a83cc0461d48d043db7ee109ef791f519a43cd0e6579e7ff7963b98",
+                "sha256:2da43b3db1e1a64f8b2cf99cdae65119603331eff289c45fcc412111f59ad227"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-09-23T17:51:34.231065716Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:2fbd3f1edc41b3e994cb7a8cab40ee36a707f915f8545500a7252cab55fc3be6",
+            "size": 856
+        },
+        "Identity": {
+            "Build": [
+                {
+                    "Ref": "9739schc8uk92ukw9awnbqz2n",
+                    "CreatedAt": "2026-09-23T17:51:57.23082663Z"
+                }
+            ]
+        }
+    }
+]

@@ -1,0 +1,20 @@
+[
+    {
+        "Type": "bind",
+        "Source": "/home/rafaelgruenevald/Projects/openplc-runtime/models",
+        "Destination": "/opt/openplc/models",
+        "Mode": "ro",
+        "RW": false,
+        "Propagation": "rprivate"
+    },
+    {
+        "Type": "volume",
+        "Name": "openplc-nodeset-dev-data",
+        "Source": "/var/lib/docker/volumes/openplc-nodeset-dev-data/_data",
+        "Destination": "/var/run/runtime",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+    }
+]

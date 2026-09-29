@@ -1,0 +1,340 @@
+[
+    {
+        "Id": "d3f8633aca6f88d534841375685701f61ac6538d8ce75bee93b098588db53323",
+        "Created": "2026-09-24T12:18:59.009503411Z",
+        "Path": "bash",
+        "Args": [
+            "./start_openplc.sh"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 1481,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-09-24T12:18:59.261767741Z",
+            "FinishedAt": "0001-01-01T00:00:00Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-09-24T12:46:27.22056336Z",
+                        "End": "2026-09-24T12:46:27.29270583Z",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-09-24T12:47:00.62711122Z",
+                        "End": "2026-09-24T12:47:00.70289419Z",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-09-24T12:47:34.035034331Z",
+                        "End": "2026-09-24T12:47:34.102895861Z",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-09-24T12:48:07.436128193Z",
+                        "End": "2026-09-24T12:48:07.505496953Z",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-09-24T12:48:40.845333867Z",
+                        "End": "2026-09-24T12:48:40.904708397Z",
+                        "ExitCode": 0,
+                        "Output": ""
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:2fbd3f1edc41b3e994cb7a8cab40ee36a707f915f8545500a7252cab55fc3be6",
+        "ResolvConfPath": "/var/lib/docker/containers/d3f8633aca6f88d534841375685701f61ac6538d8ce75bee93b098588db53323/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/d3f8633aca6f88d534841375685701f61ac6538d8ce75bee93b098588db53323/hostname",
+        "HostsPath": "/var/lib/docker/containers/d3f8633aca6f88d534841375685701f61ac6538d8ce75bee93b098588db53323/hosts",
+        "LogPath": "/var/lib/docker/containers/d3f8633aca6f88d534841375685701f61ac6538d8ce75bee93b098588db53323/d3f8633aca6f88d534841375685701f61ac6538d8ce75bee93b098588db53323-json.log",
+        "Name": "/openplc-nodeset-dev",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/home/rafaelgruenevald/Projects/openplc-runtime/models:/opt/openplc/models:ro",
+                "openplc-nodeset-dev-data:/var/run/runtime"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "bridge",
+            "PortBindings": {
+                "33333/udp": [
+                    {
+                        "HostIp": "",
+                        "HostPort": "33333"
+                    }
+                ],
+                "4840/tcp": [
+                    {
+                        "HostIp": "",
+                        "HostPort": "4840"
+                    }
+                ],
+                "502/tcp": [
+                    {
+                        "HostIp": "",
+                        "HostPort": "502"
+                    }
+                ],
+                "8443/tcp": [
+                    {
+                        "HostIp": "",
+                        "HostPort": "8443"
+                    }
+                ]
+            },
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                30,
+                108
+            ],
+            "CapAdd": [
+                "CAP_SYS_NICE",
+                "CAP_SYS_RESOURCE"
+            ],
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": [],
+            "BlkioDeviceReadBps": [],
+            "BlkioDeviceWriteBps": [],
+            "BlkioDeviceReadIOps": [],
+            "BlkioDeviceWriteIOps": [],
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": [],
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/home/rafaelgruenevald/Projects/openplc-runtime/models",
+                "Destination": "/opt/openplc/models",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "volume",
+                "Name": "openplc-nodeset-dev-data",
+                "Source": "/var/lib/docker/volumes/openplc-nodeset-dev-data/_data",
+                "Destination": "/var/run/runtime",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "d3f8633aca6f",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "33333/udp": {},
+                "4840/tcp": {},
+                "502/tcp": {},
+                "8443/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "OPENPLC_OPCUA_NODESETS=/opt/openplc/models/Test.TypedDevice.NodeSet2.xml",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "RUNTIME_VERSION=dev"
+            ],
+            "Cmd": [
+                "bash",
+                "./start_openplc.sh"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "curl -kfsS https://127.0.0.1:8443/api/version \u003e/dev/null || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 90000000000,
+                "Retries": 3
+            },
+            "Image": "openplc-custom:nodeset-dev",
+            "Volumes": null,
+            "WorkingDir": "/workdir",
+            "Entrypoint": null,
+            "Labels": {
+                "desktop.docker.io/wsl-distro": "Ubuntu"
+            }
+        },
+        "NetworkSettings": {
+            "SandboxID": "92ea8b2e65ebadf0ce289754f6d09c42548d68444fa6cec137efea7011fdc616",
+            "SandboxKey": "/var/run/docker/netns/92ea8b2e65eb",
+            "Ports": {
+                "33333/udp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "33333"
+                    },
+                    {
+                        "HostIp": "::",
+                        "HostPort": "33333"
+                    }
+                ],
+                "4840/tcp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "4840"
+                    },
+                    {
+                        "HostIp": "::",
+                        "HostPort": "4840"
+                    }
+                ],
+                "502/tcp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "502"
+                    },
+                    {
+                        "HostIp": "::",
+                        "HostPort": "502"
+                    }
+                ],
+                "8443/tcp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "8443"
+                    },
+                    {
+                        "HostIp": "::",
+                        "HostPort": "8443"
+                    }
+                ]
+            },
+            "Networks": {
+                "bridge": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "49a1cba24ffaad65dbf01fa7e8cd1eb2c4a19fe42bf4b95b7901785fb4a1da54",
+                    "EndpointID": "47290b566b8d2c05c869a6e8d12e67aaf9974e0c11803cc659ffafdfe9c6c912",
+                    "Gateway": "172.17.0.1",
+                    "IPAddress": "172.17.0.2",
+                    "MacAddress": "7e:b8:3d:97:52:44",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:08e12060d9d82a01c26a6ee5c7bcffb8fa33cced2d7d6064456b98385215f1e7",
+            "size": 1619,
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    }
+]

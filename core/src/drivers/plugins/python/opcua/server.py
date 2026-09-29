@@ -33,6 +33,11 @@ try:
     from .callbacks import PermissionCallbackHandler
     from .opcua_types import VariableNode
     from .nodeset_loader import import_nodesets
+    from .imported_node_bindings import (
+        COLLISION_POLICY_REPLACE,
+        ImportedBindingResult,
+        load_and_resolve_imported_node_bindings,
+    )
 except ImportError:
     from opcua_logging import log_info, log_warn, log_error, log_debug
     from opcua_security import OpcuaSecurityManager
@@ -43,6 +48,11 @@ except ImportError:
     from callbacks import PermissionCallbackHandler
     from opcua_types import VariableNode
     from nodeset_loader import import_nodesets
+    from imported_node_bindings import (
+        COLLISION_POLICY_REPLACE,
+        ImportedBindingResult,
+        load_and_resolve_imported_node_bindings,
+    )
 
 from shared import SafeBufferAccess
 from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
@@ -107,6 +117,11 @@ class OpcuaServerManager:
         self.node_permissions: Dict[str, Any] = {}
         self.nodeid_to_variable: Dict[Any, str] = {}
 
+        # Semantic binding result (initialized after address space)
+        self.semantic_binding_result: Optional[
+            ImportedBindingResult
+        ] = None
+
         # Synchronization manager (initialized after address space)
         self.sync_manager: Optional[SynchronizationManager] = None
 
@@ -140,6 +155,15 @@ class OpcuaServerManager:
             # Create address space (nodes)
             if not await self._create_address_space():
                 log_error("Failed to create address space")
+                return
+
+            # Resolve imported semantic bindings after all NodeSets
+            # and legacy variables have been created, but before
+            # callbacks and synchronization are initialized.
+            if not await self._resolve_semantic_bindings():
+                log_error(
+                    "Failed to resolve semantic OPC UA bindings"
+                )
                 return
 
             # Register permission callbacks (AFTER address space, BEFORE start)
@@ -448,6 +472,92 @@ class OpcuaServerManager:
 
         except Exception as e:
             log_error(f"Failed to create address space: {e}")
+            traceback.print_exc()
+            return False
+
+    async def _resolve_semantic_bindings(self) -> bool:
+        """
+        Resolve configured semantic NodeSet bindings.
+
+        Bindings are loaded after the configured NodeSets and legacy
+        address space have been created. This allows imported semantic
+        variables to replace legacy synchronization targets without
+        creating duplicate nodes.
+
+        The feature is optional. If OPENPLC_OPCUA_BINDINGS is absent or
+        empty, the legacy variable mapping remains unchanged.
+
+        Returns:
+            True if no bindings are configured or every binding was
+            resolved successfully.
+        """
+        binding_path = os.getenv(
+            "OPENPLC_OPCUA_BINDINGS",
+            "",
+        ).strip()
+
+        if not binding_path:
+            log_debug(
+                "No semantic OPC UA bindings configured"
+            )
+            return True
+
+        if not self.server:
+            log_error(
+                "Cannot resolve semantic OPC UA bindings because "
+                "the server is not initialized"
+            )
+            return False
+
+        try:
+            log_info(
+                "Loading semantic OPC UA bindings from "
+                f"{binding_path}"
+            )
+
+            result = (
+                await load_and_resolve_imported_node_bindings(
+                    server=self.server,
+                    binding_path=binding_path,
+                    existing_variable_nodes=(
+                        self.variable_nodes
+                    ),
+                    collision_policy=(
+                        COLLISION_POLICY_REPLACE
+                    ),
+                )
+            )
+
+            self.variable_nodes = (
+                result.variable_nodes
+            )
+
+            self.semantic_binding_result = (
+                result
+            )
+
+            log_info(
+                "Semantic OPC UA bindings resolved: "
+                f"{len(result.resolved_bindings)} total, "
+                f"{result.new_binding_count} new, "
+                f"{result.replacement_count} replaced"
+            )
+
+            for resolved in result.resolved_bindings:
+                log_debug(
+                    "Active semantic binding "
+                    f"{resolved.binding.binding_id}: "
+                    f"{resolved.address} -> "
+                    f"{resolved.node_id}"
+                )
+
+            return True
+
+        except Exception as exception:
+            log_error(
+                "Failed to resolve semantic OPC UA bindings "
+                f"from {binding_path}: {exception}"
+            )
             traceback.print_exc()
             return False
 

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "id": "padim-pressure-test",
+    "namespaceUri": "urn:openplc:test:padim-device"
+  },
+  "runtime": {
+    "type": "openplc",
+    "version": "4.0.0"
+  },
+  "bindings": [
+    {
+      "id": "PT101.Pressure",
+      "nodeId": {
+        "namespaceUri": "urn:openplc:test:padim-device",
+        "identifierType": "String",
+        "identifier": "PT101.SignalSet.Pressure.AnalogSignal"
+      },
+      "source": {
+        "kind": "openplc-debug-leaf",
+        "symbol": "INSTANCE0.PT101.PRESSURESIGNAL.PROCESSVALUE.VALUE",
+        "arrayIndex": 0,
+        "elementIndex": 14,
+        "datatype": "REAL",
+        "size": 4
+      },
+      "types": {
+        "iec": "REAL",
+        "opcUa": "Float"
+      },
+      "access": {
+        "read": true,
+        "write": false
+      },
+      "update": {
+        "mode": "subscription-aware",
+        "intervalMs": 100
+      }
+    }
+  ]
+}
