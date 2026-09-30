@@ -1,0 +1,87 @@
+<?xml version='1.0' encoding='utf-8'?>
+<UANodeSet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:uax="http://opcfoundation.org/UA/2008/02/Types.xsd" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd">
+  <NamespaceUris>
+    <Uri>urn:openplc:test:xmlexporter-structured-roundtrip</Uri>
+  </NamespaceUris>
+  <Aliases>
+    <Alias Alias="Float">i=10</Alias>
+    <Alias Alias="Organizes">i=35</Alias>
+    <Alias Alias="HasTypeDefinition">i=40</Alias>
+    <Alias Alias="HasProperty">i=46</Alias>
+    <Alias Alias="HasComponent">i=47</Alias>
+    <Alias Alias="Range">i=884</Alias>
+    <Alias Alias="EUInformation">i=887</Alias>
+  </Aliases>
+  <UAObject NodeId="ns=1;s=Test" BrowseName="1:Test" ParentNodeId="i=85">
+    <DisplayName>Test</DisplayName>
+    <Description>Test</Description>
+    <References>
+      <Reference ReferenceType="Organizes" IsForward="false">i=85</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=58</Reference>
+      <Reference ReferenceType="HasComponent">ns=1;s=Test.Pressure</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=1;s=Test.Pressure" BrowseName="1:Pressure" ParentNodeId="ns=1;s=Test" DataType="Float">
+    <DisplayName>Pressure</DisplayName>
+    <Description>Pressure</Description>
+    <References>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;s=Test</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=63</Reference>
+      <Reference ReferenceType="HasProperty">ns=1;s=Test.Pressure.EngineeringUnits</Reference>
+      <Reference ReferenceType="HasProperty">ns=1;s=Test.Pressure.EURange</Reference>
+    </References>
+    <Value>
+      <uax:Float>12.5</uax:Float>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;s=Test.Pressure.EURange" BrowseName="0:EURange" ParentNodeId="ns=1;s=Test.Pressure" DataType="Range">
+    <DisplayName>EURange</DisplayName>
+    <Description>EURange</Description>
+    <References>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;s=Test.Pressure</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:ExtensionObject>
+        <uax:TypeId>
+          <uax:Identifier>i=884</uax:Identifier>
+        </uax:TypeId>
+        <uax:Body>
+          <uax:Range>
+            <uax:Low>0.0</uax:Low>
+            <uax:High>16.0</uax:High>
+          </uax:Range>
+        </uax:Body>
+      </uax:ExtensionObject>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;s=Test.Pressure.EngineeringUnits" BrowseName="0:EngineeringUnits" ParentNodeId="ns=1;s=Test.Pressure" DataType="EUInformation">
+    <DisplayName>EngineeringUnits</DisplayName>
+    <Description>EngineeringUnits</Description>
+    <References>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;s=Test.Pressure</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+    </References>
+    <Value>
+      <uax:ExtensionObject>
+        <uax:TypeId>
+          <uax:Identifier>i=887</uax:Identifier>
+        </uax:TypeId>
+        <uax:Body>
+          <uax:EUInformation>
+            <uax:NamespaceUri>http://www.opcfoundation.org/UA/units/un/cefact</uax:NamespaceUri>
+            <uax:UnitId>4342098</uax:UnitId>
+            <uax:DisplayName>
+              <uax:Locale />
+              <uax:Text>bar</uax:Text>
+            </uax:DisplayName>
+            <uax:Description>
+              <uax:Locale />
+              <uax:Text>bar</uax:Text>
+            </uax:Description>
+          </uax:EUInformation>
+        </uax:Body>
+      </uax:ExtensionObject>
+    </Value>
+  </UAVariable>
+</UANodeSet>

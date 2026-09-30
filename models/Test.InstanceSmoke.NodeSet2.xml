@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UANodeSet
+    xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd"
+    xmlns:uax="http://opcfoundation.org/UA/2008/02/Types.xsd">
+
+  <NamespaceUris>
+    <Uri>urn:openplc:test:nodeset</Uri>
+  </NamespaceUris>
+
+  <UAObject
+      NodeId="ns=1;s=TestDevice"
+      BrowseName="1:TestDevice"
+      ParentNodeId="i=85">
+
+    <DisplayName>Test Device</DisplayName>
+
+    <Description>Minimal object used to verify OpenPLC NodeSet import</Description>
+
+    <References>
+      <Reference ReferenceType="i=35" IsForward="false">i=85</Reference>
+      <Reference ReferenceType="i=40">i=58</Reference>
+    </References>
+  </UAObject>
+
+  <UAVariable
+      NodeId="ns=1;s=TestDevice.TestValue"
+      BrowseName="1:TestValue"
+      ParentNodeId="ns=1;s=TestDevice"
+      DataType="i=10"
+      ValueRank="-1"
+      AccessLevel="1"
+      UserAccessLevel="1">
+
+    <DisplayName>Test Value</DisplayName>
+
+    <Description>Static value imported from the test NodeSet</Description>
+
+    <References>
+      <Reference ReferenceType="i=47" IsForward="false">ns=1;s=TestDevice</Reference>
+      <Reference ReferenceType="i=40">i=63</Reference>
+    </References>
+
+    <Value>
+      <uax:Float>12.5</uax:Float>
+    </Value>
+  </UAVariable>
+
+</UANodeSet>

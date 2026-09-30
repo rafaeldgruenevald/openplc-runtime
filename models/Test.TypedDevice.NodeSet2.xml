@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UANodeSet
+    xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd"
+    xmlns:uax="http://opcfoundation.org/UA/2008/02/Types.xsd">
+
+  <NamespaceUris>
+    <Uri>urn:openplc:test:typed-device</Uri>
+  </NamespaceUris>
+
+  <!--
+    Custom ObjectType:
+      TestDeviceType
+        ProcessValue : Float [Mandatory]
+  -->
+
+  <UAObjectType
+      NodeId="ns=1;s=TestDeviceType"
+      BrowseName="1:TestDeviceType"
+      ParentNodeId="i=58"
+      IsAbstract="false">
+
+    <DisplayName>TestDeviceType</DisplayName>
+
+    <Description>
+      Minimal custom device type used before importing PADIM
+    </Description>
+
+    <References>
+      <!-- TestDeviceType is a subtype of BaseObjectType -->
+      <Reference
+          ReferenceType="i=45"
+          IsForward="false">i=58</Reference>
+    </References>
+  </UAObjectType>
+
+  <!--
+    Mandatory declaration belonging to TestDeviceType.
+  -->
+
+  <UAVariable
+      NodeId="ns=1;s=TestDeviceType.ProcessValue"
+      BrowseName="1:ProcessValue"
+      ParentNodeId="ns=1;s=TestDeviceType"
+      DataType="i=10"
+      ValueRank="-1"
+      AccessLevel="1"
+      UserAccessLevel="1">
+
+    <DisplayName>ProcessValue</DisplayName>
+
+    <Description>
+      Mandatory Float process-value declaration
+    </Description>
+
+    <References>
+      <!-- Inverse HasComponent points to the parent ObjectType -->
+      <Reference
+          ReferenceType="i=47"
+          IsForward="false">ns=1;s=TestDeviceType</Reference>
+
+      <!-- This declaration is a BaseDataVariableType -->
+      <Reference ReferenceType="i=40">i=63</Reference>
+
+      <!-- Mandatory ModellingRule -->
+      <Reference ReferenceType="i=37">i=78</Reference>
+    </References>
+
+    <Value>
+      <uax:Float>0.0</uax:Float>
+    </Value>
+  </UAVariable>
+
+  <!--
+    OpenPLC DCN organizational folder below Objects.
+  -->
+
+  <UAObject
+      NodeId="ns=1;s=OpenPLC_DCN"
+      BrowseName="1:OpenPLC_DCN"
+      ParentNodeId="i=85">
+
+    <DisplayName>OpenPLC DCN</DisplayName>
+
+    <Description>
+      Root folder for the OpenPLC-based DCN prototype
+    </Description>
+
+    <References>
+      <!-- Inverse Organizes points to Objects -->
+      <Reference
+          ReferenceType="i=35"
+          IsForward="false">i=85</Reference>
+
+      <!-- FolderType -->
+      <Reference ReferenceType="i=40">i=61</Reference>
+    </References>
+  </UAObject>
+
+  <!--
+    Devices folder below OpenPLC DCN.
+  -->
+
+  <UAObject
+      NodeId="ns=1;s=OpenPLC_DCN.Devices"
+      BrowseName="1:Devices"
+      ParentNodeId="ns=1;s=OpenPLC_DCN">
+
+    <DisplayName>Devices</DisplayName>
+
+    <Description>
+      Organizational folder containing semantic device instances
+    </Description>
+
+    <References>
+      <!-- Inverse Organizes points to OpenPLC DCN -->
+      <Reference
+          ReferenceType="i=35"
+          IsForward="false">ns=1;s=OpenPLC_DCN</Reference>
+
+      <!-- FolderType -->
+      <Reference ReferenceType="i=40">i=61</Reference>
+    </References>
+  </UAObject>
+
+  <!--
+    Typed device instance.
+  -->
+
+  <UAObject
+      NodeId="ns=1;s=OpenPLC_DCN.Devices.SemanticPT101"
+      BrowseName="1:SemanticPT101"
+      ParentNodeId="ns=1;s=OpenPLC_DCN.Devices">
+
+    <DisplayName>Semantic PT101</DisplayName>
+
+    <Description>
+      Static typed pressure-device test instance
+    </Description>
+
+    <References>
+      <!-- Devices organizes SemanticPT101 -->
+      <Reference
+          ReferenceType="i=35"
+          IsForward="false">ns=1;s=OpenPLC_DCN.Devices</Reference>
+
+      <!-- HasTypeDefinition points to TestDeviceType -->
+      <Reference
+          ReferenceType="i=40">ns=1;s=TestDeviceType</Reference>
+    </References>
+  </UAObject>
+
+  <!--
+    Concrete mandatory ProcessValue instance.
+  -->
+
+  <UAVariable
+      NodeId="ns=1;s=OpenPLC_DCN.Devices.SemanticPT101.ProcessValue"
+      BrowseName="1:ProcessValue"
+      ParentNodeId="ns=1;s=OpenPLC_DCN.Devices.SemanticPT101"
+      DataType="i=10"
+      ValueRank="-1"
+      AccessLevel="1"
+      UserAccessLevel="1">
+
+    <DisplayName>Process Value</DisplayName>
+
+    <Description>
+      Static process value of the typed test device
+    </Description>
+
+    <References>
+      <Reference
+          ReferenceType="i=47"
+          IsForward="false">ns=1;s=OpenPLC_DCN.Devices.SemanticPT101</Reference>
+
+      <Reference ReferenceType="i=40">i=63</Reference>
+    </References>
+
+    <Value>
+      <uax:Float>12.5</uax:Float>
+    </Value>
+  </UAVariable>
+
+</UANodeSet>
