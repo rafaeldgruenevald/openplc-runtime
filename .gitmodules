@@ -1,3 +1,7 @@
 [submodule "core/src/drivers/plugins/native/ethercat/libs/soem"]
 	path = core/src/drivers/plugins/native/ethercat/libs/soem
 	url = https://github.com/OpenEtherCATsociety/SOEM.git
+
+[submodule "external/UA-Nodeset"]
+	path = external/UA-Nodeset
+	url = https://github.com/OPCFoundation/UA-Nodeset.git
