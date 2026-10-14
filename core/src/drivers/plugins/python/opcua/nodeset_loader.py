@@ -8,7 +8,8 @@ and before OpenPLC creates its normal PLC-backed address space.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+from xml.etree import ElementTree
 
 try:
     from .model_paths import generated_root, resolve_model_file
@@ -19,6 +20,15 @@ except ImportError:
 
 
 ALLOWED_MODEL_ROOT = Path("/opt/openplc/models").resolve()
+
+NODESET_NS = "{http://opcfoundation.org/UA/2011/03/UANodeSet.xsd}"
+
+# asyncua cannot import an object that has no ParentNodeId and is a
+# FunctionalGroupType instance nobody references (the DI "Configuration",
+# "Identification"... groups): the whole import fails with
+# BadParentNodeIdInvalid. They are skipped here, with a log line, and the
+# NodeSet file itself stays untouched.
+FUNCTIONAL_GROUP_TYPE_NAME = "FunctionalGroupType"
 
 
 def validate_nodeset_path(raw_path: str) -> Path:
@@ -36,6 +46,71 @@ def validate_nodeset_path(raw_path: str) -> Path:
         roots=(generated_root(), ALLOWED_MODEL_ROOT),
         suffixes=(".xml",),
     )
+
+
+def find_unimportable_objects(root: ElementTree.Element) -> List[str]:
+    """
+    NodeIds of the standalone FunctionalGroupType instances asyncua cannot
+    import (see FUNCTIONAL_GROUP_TYPE_NAME).
+    """
+    nodes = [element for element in root if element.get("NodeId")]
+
+    group_types = {
+        element.get("NodeId")
+        for element in nodes
+        if element.tag == f"{NODESET_NS}UAObjectType"
+        and (element.get("BrowseName") or "").split(":")[-1]
+        == FUNCTIONAL_GROUP_TYPE_NAME
+    }
+
+    if not group_types:
+        return []
+
+    referenced = {
+        reference.text
+        for element in nodes
+        for reference in element.iter(f"{NODESET_NS}Reference")
+    }
+
+    skipped: List[str] = []
+
+    for element in nodes:
+        if element.tag != f"{NODESET_NS}UAObject" or element.get("ParentNodeId"):
+            continue
+
+        node_id = element.get("NodeId", "")
+
+        has_group_type = any(
+            reference.get("ReferenceType") == "HasTypeDefinition"
+            and reference.text in group_types
+            for reference in element.iter(f"{NODESET_NS}Reference")
+        )
+
+        if has_group_type and node_id not in referenced:
+            skipped.append(node_id)
+
+    return skipped
+
+
+def prepare_nodeset(path: Path) -> Tuple[Optional[str], List[str]]:
+    """
+    Returns (xml_text, skipped_node_ids). xml_text is None when nothing
+    has to be skipped and the file can be imported as it is.
+    """
+    root = ElementTree.parse(path).getroot()
+
+    skipped = find_unimportable_objects(root)
+
+    if not skipped:
+        return None, []
+
+    for element in list(root):
+        if element.get("NodeId") in skipped:
+            root.remove(element)
+
+    ElementTree.register_namespace("", NODESET_NS[1:-1])
+
+    return ElementTree.tostring(root, encoding="unicode"), skipped
 
 
 async def import_nodesets(
@@ -56,11 +131,24 @@ async def import_nodesets(
 
         log_info(f"Importing OPC UA NodeSet: {path}")
 
-        imported_nodes = await server.import_xml(
-            path=str(path),
-            strict_mode=True,
-            auto_load_definitions=True,
-        )
+        xml_text, skipped = prepare_nodeset(path)
+
+        if skipped:
+            log_info(
+                f"Skipping {len(skipped)} standalone group object(s) of "
+                f"{path.name} that asyncua cannot import: {', '.join(skipped)}"
+            )
+            imported_nodes = await server.import_xml(
+                xmlstring=xml_text,
+                strict_mode=True,
+                auto_load_definitions=True,
+            )
+        else:
+            imported_nodes = await server.import_xml(
+                path=str(path),
+                strict_mode=True,
+                auto_load_definitions=True,
+            )
 
         imported_count = len(imported_nodes or [])
 
