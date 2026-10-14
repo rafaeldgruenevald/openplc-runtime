@@ -37,7 +37,7 @@ resolved against debug-map.json and wrote into opcua_config.json.
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from asyncua import Server, ua
 
@@ -78,6 +78,14 @@ Addr = Tuple[int, int]
 
 _VALUE_ATTR = ua.AttributeIds.Value
 
+def _build_structure(structure: str, values: Dict[str, float]) -> object:
+    """Assemble the OPC UA structure named by a composite binding."""
+    if structure == "Range":
+        return ua.Range(Low=values["Low"], High=values["High"])
+
+    raise ValueError(f"Unsupported composite structure: {structure}")
+
+
 class SynchronizationManager:
     """Request-driven OPC-UA ↔ PLC value bridge (see module docstring)."""
 
@@ -86,6 +94,7 @@ class SynchronizationManager:
         args: Any,
         variable_nodes: Dict[Addr, VariableNode],
         server: Optional[Server] = None,
+        composite_nodes: Optional[List[Any]] = None,
     ):
         """
         Args:
@@ -95,10 +104,13 @@ class SynchronizationManager:
                             AddressSpaceBuilder.
             server: asyncua Server. Required for the value hooks and the
                     subscription push.
+            composite_nodes: Resolved composite bindings (structured
+                    nodes built from several leaves, read-only).
         """
         self.args = args
         self.variable_nodes = variable_nodes
         self.server = server
+        self.composite_nodes = list(composite_nodes or [])
 
         # Metadata cache (size + datatype) keyed by (arr, elem). Empty
         # until the first PLC-loaded cycle reaches initialize.
@@ -139,6 +151,7 @@ class SynchronizationManager:
 
             self._sub_scoping = self._probe_subscription_scoping()
             self._register_value_hooks()
+            self._register_composite_hooks()
 
             log_debug(
                 f"Sync manager: {len(self._readwrite_nodes)} readwrite, "
@@ -200,6 +213,69 @@ class SynchronizationManager:
                 )
             except Exception as e:
                 log_error(f"Failed to hook node ({arr},{elem}): {e}")
+
+    def _register_composite_hooks(self) -> None:
+        """Install a live-read callback on every composite node.
+
+        A no-op setter is installed too: without a setter asyncua drops
+        the value callback on the first push to the node.
+        """
+        aspace = self._aspace()
+        if aspace is None or not self.composite_nodes:
+            return
+
+        for composite in self.composite_nodes:
+            nodeid = composite.node.nodeid
+            try:
+                aspace.set_attribute_value_callback(
+                    nodeid, _VALUE_ATTR, self._make_composite_callback(composite)
+                )
+                aspace.set_attribute_value_setter(
+                    nodeid, _VALUE_ATTR, lambda node_data, attr, data_value: None
+                )
+            except Exception as e:
+                log_error(f"Failed to hook composite node {nodeid}: {e}")
+
+    def _make_composite_callback(
+        self, composite: Any
+    ) -> Callable[[Any, Any], ua.DataValue]:
+        """Build the value_callback of a composite node: read each leaf
+        live and assemble the OPC UA structure."""
+        structure = composite.binding.structure
+        fields = composite.binding.fields
+
+        def callback(nodeid: Any, attr: Any) -> ua.DataValue:
+            now = datetime.now(timezone.utc)
+            try:
+                values: Dict[str, float] = {}
+                for name, leaf in fields.items():
+                    raw = debug_read_value(
+                        self.args, leaf.array_index, leaf.element_index, leaf.datatype
+                    )
+                    if raw is None:
+                        return ua.DataValue(
+                            StatusCode_=ua.StatusCode(ua.StatusCodes.BadNoDataAvailable),
+                            SourceTimestamp=now,
+                            ServerTimestamp=now,
+                        )
+                    values[name] = float(convert_value_for_opcua(leaf.datatype, raw))
+
+                return ua.DataValue(
+                    Value=ua.Variant(
+                        _build_structure(structure, values),
+                        ua.VariantType.ExtensionObject,
+                    ),
+                    StatusCode_=ua.StatusCode(ua.StatusCodes.Good),
+                    SourceTimestamp=now,
+                    ServerTimestamp=now,
+                )
+            except Exception as e:
+                log_error(f"Composite read callback {nodeid} failed: {e}")
+                return ua.DataValue(
+                    StatusCode_=ua.StatusCode(ua.StatusCodes.BadInternalError)
+                )
+
+        return callback
 
     def _all_addresses(self) -> list:
         """Expand variable_nodes into the full list of (arr, elem)

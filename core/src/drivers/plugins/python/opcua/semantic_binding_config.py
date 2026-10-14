@@ -19,7 +19,7 @@ disabled until the read path has been validated end to end.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -36,6 +36,12 @@ SUPPORTED_SOURCE_KINDS = frozenset(
         "openplc-debug-leaf",
     }
 )
+# Structured OPC UA values built from several PLC leaves. Each entry lists the
+# structure fields, in order; every field is a floating point leaf.
+SUPPORTED_COMPOSITE_STRUCTURES = {
+    "Range": ("Low", "High"),
+}
+COMPOSITE_FIELD_DATATYPES = frozenset({"REAL", "LREAL"})
 SUPPORTED_UPDATE_MODES = frozenset(
     {
         "subscription-aware",
@@ -589,6 +595,89 @@ class SemanticBinding:
 
 
 @dataclass(frozen=True)
+class CompositeBinding:
+    """One imported structured node read from several OpenPLC leaves.
+
+    Read-only: the server builds the structure from the leaves on every
+    client read. Subscriptions report the value at creation only.
+    """
+
+    binding_id: str
+    target: ImportedNodeTarget
+    structure: str
+    fields: Dict[str, OpenPLCDebugLeaf]
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+    ) -> "CompositeBinding":
+        structure = _require_string(
+            data,
+            "structure",
+        )
+
+        if structure not in SUPPORTED_COMPOSITE_STRUCTURES:
+            raise ValueError(
+                "Unsupported composite structure: "
+                f"{structure!r}; supported: "
+                f"{sorted(SUPPORTED_COMPOSITE_STRUCTURES)}"
+            )
+
+        fields_data = _require_dict(
+            data.get("fields"),
+            "fields",
+        )
+
+        expected = SUPPORTED_COMPOSITE_STRUCTURES[
+            structure
+        ]
+
+        if set(fields_data) != set(expected):
+            raise ValueError(
+                f"Composite {structure} needs exactly "
+                f"the fields {list(expected)}, got "
+                f"{sorted(fields_data)}"
+            )
+
+        fields: Dict[str, OpenPLCDebugLeaf] = {}
+
+        for name in expected:
+            leaf = OpenPLCDebugLeaf.from_dict(
+                {
+                    **_require_dict(
+                        fields_data[name],
+                        f"fields.{name}",
+                    ),
+                    "kind": "openplc-debug-leaf",
+                }
+            )
+
+            if leaf.datatype not in COMPOSITE_FIELD_DATATYPES:
+                raise ValueError(
+                    f"Composite field {name} must be REAL "
+                    f"or LREAL, not {leaf.datatype}"
+                )
+
+            fields[name] = leaf
+
+        return cls(
+            binding_id=_require_string(
+                data,
+                "id",
+            ),
+            target=ImportedNodeTarget.from_dict(
+                _require_dict(
+                    data.get("nodeId"),
+                    "nodeId",
+                )
+            ),
+            structure=structure,
+            fields=fields,
+        )
+
+
+@dataclass(frozen=True)
 class SemanticBindingConfig:
     """Complete semantic binding artifact."""
 
@@ -596,6 +685,9 @@ class SemanticBindingConfig:
     project: SemanticProject
     runtime: RuntimeTarget
     bindings: List[SemanticBinding]
+    composite_bindings: List[CompositeBinding] = field(
+        default_factory=list
+    )
 
     @classmethod
     def from_dict(
@@ -664,6 +756,29 @@ class SemanticBindingConfig:
                 parsed_binding
             )
 
+        composite_bindings = []
+
+        for index, composite_data in enumerate(
+            _require_list(
+                data.get("compositeBindings", []),
+                "compositeBindings",
+            )
+        ):
+            try:
+                composite_bindings.append(
+                    CompositeBinding.from_dict(
+                        _require_dict(
+                            composite_data,
+                            f"compositeBindings[{index}]",
+                        )
+                    )
+                )
+            except ValueError as exception:
+                raise ValueError(
+                    "Invalid composite binding at "
+                    f"index {index}: {exception}"
+                ) from exception
+
         config = cls(
             schema_version=schema_version,
             project=SemanticProject.from_dict(
@@ -673,6 +788,7 @@ class SemanticBindingConfig:
                 runtime_data
             ),
             bindings=bindings,
+            composite_bindings=composite_bindings,
         )
 
         config.validate_consistency()
@@ -723,6 +839,35 @@ class SemanticBindingConfig:
 
             addresses.add(
                 address
+            )
+
+        for composite in self.composite_bindings:
+            if (
+                composite.target.namespace_uri
+                != self.project.namespace_uri
+            ):
+                raise ValueError(
+                    f"Composite {composite.binding_id!r} "
+                    "targets namespace "
+                    f"{composite.target.namespace_uri!r}, "
+                    "but the project namespace is "
+                    f"{self.project.namespace_uri!r}"
+                )
+
+            target_key = (
+                composite.target.namespace_uri,
+                composite.target.identifier_type,
+                composite.target.identifier,
+            )
+
+            if target_key in identifiers:
+                raise ValueError(
+                    "Duplicate imported NodeId target "
+                    f"in composite {composite.binding_id!r}"
+                )
+
+            identifiers.add(
+                target_key
             )
 
 

@@ -35,7 +35,8 @@ try:
     from .user_manager import OpenPLCUserManager
     from .callbacks import PermissionCallbackHandler
     from .opcua_types import VariableNode
-    from .nodeset_loader import import_nodesets
+    from .model_paths import generated_root, resolve_model_file
+    from .nodeset_loader import ALLOWED_MODEL_ROOT, import_nodesets
     from .imported_node_bindings import (
         COLLISION_POLICY_REPLACE,
         ImportedBindingResult,
@@ -50,7 +51,8 @@ except ImportError:
     from user_manager import OpenPLCUserManager
     from callbacks import PermissionCallbackHandler
     from opcua_types import VariableNode
-    from nodeset_loader import import_nodesets
+    from model_paths import generated_root, resolve_model_file
+    from nodeset_loader import ALLOWED_MODEL_ROOT, import_nodesets
     from imported_node_bindings import (
         COLLISION_POLICY_REPLACE,
         ImportedBindingResult,
@@ -286,14 +288,10 @@ class OpcuaServerManager:
         """
         Import optional NodeSet XML models.
 
-        This development implementation reads paths from the
-        OPENPLC_OPCUA_NODESETS environment variable.
-
-        Multiple paths are separated using the platform path
-        separator. On Linux, this separator is ':'.
-
-        The final implementation will move the model configuration
-        into the typed opcua.json configuration.
+        The paths come from the semantic_model section of opcua.json
+        (relative to the extracted program). The OPENPLC_OPCUA_NODESETS
+        environment variable, with paths separated by the platform path
+        separator, remains as a development fallback.
         """
 
         if not self.server:
@@ -303,26 +301,25 @@ class OpcuaServerManager:
             )
             return False
 
-        raw_value = os.getenv(
-            "OPENPLC_OPCUA_NODESETS",
-            "",
-        ).strip()
+        semantic_model = getattr(self.config, "semantic_model", None)
 
-        if not raw_value:
-            log_debug(
-                "No optional OPC UA NodeSets configured"
-            )
-            return True
+        if semantic_model is not None and semantic_model.nodesets:
+            paths = list(semantic_model.nodesets)
+        else:
+            raw_value = os.getenv(
+                "OPENPLC_OPCUA_NODESETS",
+                "",
+            ).strip()
 
-        paths = [
-            item.strip()
-            for item in raw_value.split(os.pathsep)
-            if item.strip()
-        ]
+            paths = [
+                item.strip()
+                for item in raw_value.split(os.pathsep)
+                if item.strip()
+            ]
 
         if not paths:
             log_debug(
-                "OPENPLC_OPCUA_NODESETS contained no usable paths"
+                "No optional OPC UA NodeSets configured"
             )
             return True
 
@@ -486,17 +483,24 @@ class OpcuaServerManager:
         variables to replace legacy synchronization targets without
         creating duplicate nodes.
 
-        The feature is optional. If OPENPLC_OPCUA_BINDINGS is absent or
-        empty, the legacy variable mapping remains unchanged.
+        The feature is optional. If neither the semantic_model section
+        of opcua.json nor OPENPLC_OPCUA_BINDINGS names a file, the legacy
+        variable mapping remains unchanged.
 
         Returns:
             True if no bindings are configured or every binding was
             resolved successfully.
         """
-        binding_path = os.getenv(
-            "OPENPLC_OPCUA_BINDINGS",
-            "",
-        ).strip()
+        semantic_model = getattr(self.config, "semantic_model", None)
+
+        binding_path = (
+            semantic_model.bindings
+            if semantic_model is not None and semantic_model.bindings
+            else os.getenv(
+                "OPENPLC_OPCUA_BINDINGS",
+                "",
+            ).strip()
+        )
 
         if not binding_path:
             log_debug(
@@ -512,6 +516,14 @@ class OpcuaServerManager:
             return False
 
         try:
+            binding_path = str(
+                resolve_model_file(
+                    binding_path,
+                    roots=(generated_root(), ALLOWED_MODEL_ROOT),
+                    suffixes=(".json",),
+                )
+            )
+
             log_info(
                 "Loading semantic OPC UA bindings from "
                 f"{binding_path}"
@@ -582,6 +594,11 @@ class OpcuaServerManager:
                 args=self.buffer_accessor.runtime_args,
                 variable_nodes=self.variable_nodes,
                 server=self.server,
+                composite_nodes=(
+                    self.semantic_binding_result.resolved_composites
+                    if self.semantic_binding_result is not None
+                    else []
+                ),
             )
 
             if not await self.sync_manager.initialize():

@@ -428,6 +428,35 @@ class AddressSpace:
         )
 
 @dataclass
+class SemanticModelConfig:
+    """Optional OPC UA semantic model shipped with the program.
+
+    nodesets are NodeSet2 XML files imported in the given order (a model
+    must come after the models it requires); bindings is the JSON file
+    that ties imported nodes to PLC variables. Paths are relative to the
+    extracted program (core/generated).
+    """
+    nodesets: List[str]
+    bindings: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'SemanticModelConfig':
+        if not isinstance(data, dict):
+            raise ValueError("semantic_model must be an object")
+
+        nodesets = data.get("nodesets", [])
+        if not isinstance(nodesets, list) or not all(
+            isinstance(item, str) and item.strip() for item in nodesets
+        ):
+            raise ValueError("semantic_model.nodesets must be a list of file paths")
+
+        bindings = data.get("bindings")
+        if bindings is not None and (not isinstance(bindings, str) or not bindings.strip()):
+            raise ValueError("semantic_model.bindings must be a file path")
+
+        return cls(nodesets=list(nodesets), bindings=bindings)
+
+@dataclass
 class OpcuaConfig:
     """Complete OPC-UA configuration."""
     server: ServerConfig
@@ -436,6 +465,7 @@ class OpcuaConfig:
     address_space: AddressSpace
     cycle_time_ms: int = 100  # Default cycle time in milliseconds
     format_version: int = 0  # opcua.json contract version (see gate in from_dict)
+    semantic_model: Optional[SemanticModelConfig] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OpcuaConfig':
@@ -466,13 +496,19 @@ class OpcuaConfig:
         address_space = AddressSpace.from_dict(address_space_data)
         cycle_time_ms = data.get("cycle_time_ms", 100)  # Default 100ms if not specified
 
+        semantic_data = data.get("semantic_model")
+        semantic_model = (
+            SemanticModelConfig.from_dict(semantic_data) if semantic_data is not None else None
+        )
+
         return cls(
             server=server,
             security=security,
             users=users,
             address_space=address_space,
             cycle_time_ms=cycle_time_ms,
-            format_version=format_version
+            format_version=format_version,
+            semantic_model=semantic_model
         )
 
 @dataclass

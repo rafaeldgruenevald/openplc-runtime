@@ -30,7 +30,7 @@ The first implementation supports string NodeIds and scalar variables.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -46,6 +46,7 @@ try:
     )
     from .opcua_types import VariableNode
     from .semantic_binding_config import (
+        CompositeBinding,
         SemanticBinding,
         SemanticBindingConfig,
         load_semantic_binding_config,
@@ -59,6 +60,7 @@ except ImportError:
     )
     from opcua_types import VariableNode
     from semantic_binding_config import (
+        CompositeBinding,
         SemanticBinding,
         SemanticBindingConfig,
         load_semantic_binding_config,
@@ -120,6 +122,27 @@ OPCUA_DATA_TYPE_NODE_IDS = {
 }
 
 
+# DataType of each structure a composite binding can fill.
+COMPOSITE_STRUCTURE_DATA_TYPES = {
+    "Range": ua.NodeId(
+        ua.ObjectIds.Range
+    ),
+}
+
+
+@dataclass(frozen=True)
+class ResolvedCompositeBinding:
+    """One validated structured node and the leaves that feed it."""
+
+    binding: CompositeBinding
+    namespace_index: int
+    node: Node
+
+    @property
+    def node_id(self) -> ua.NodeId:
+        return self.node.nodeid
+
+
 @dataclass(frozen=True)
 class ResolvedImportedBinding:
     """
@@ -155,6 +178,9 @@ class ImportedBindingResult:
     resolved_bindings: List[
         ResolvedImportedBinding
     ]
+    resolved_composites: List[
+        ResolvedCompositeBinding
+    ] = field(default_factory=list)
 
     @property
     def replacement_count(self) -> int:
@@ -361,6 +387,59 @@ async def _create_variable_node(
     )
 
 
+async def _resolve_composite_binding(
+    server: Server,
+    binding: CompositeBinding,
+) -> ResolvedCompositeBinding:
+    namespace_index = (
+        await _resolve_namespace_index(
+            server,
+            binding.target.namespace_uri,
+        )
+    )
+
+    node = server.get_node(
+        ua.NodeId(
+            binding.target.identifier,
+            namespace_index,
+        )
+    )
+
+    try:
+        node_class = await node.read_node_class()
+        data_type = await node.read_data_type()
+    except Exception as exception:
+        raise ValueError(
+            f"Composite {binding.binding_id!r} target "
+            f"does not exist or cannot be read: "
+            f"{node.nodeid}"
+        ) from exception
+
+    if node_class != ua.NodeClass.Variable:
+        raise ValueError(
+            f"Composite {binding.binding_id!r} target "
+            "must be an OPC UA Variable, but "
+            f"{node.nodeid} has NodeClass {node_class}"
+        )
+
+    expected = COMPOSITE_STRUCTURE_DATA_TYPES[
+        binding.structure
+    ]
+
+    if data_type != expected:
+        raise ValueError(
+            f"Composite {binding.binding_id!r} target "
+            f"has DataType {data_type}, expected "
+            f"{expected} for {binding.structure}"
+        )
+
+    return ResolvedCompositeBinding(
+        binding=binding,
+        namespace_index=namespace_index,
+        node=node,
+    )
+
+
 def _validate_collision_policy(
     collision_policy: str,
 ) -> None:
@@ -485,6 +564,14 @@ async def resolve_imported_node_bindings(
             address
         ] = variable_node
 
+    resolved_composites = [
+        await _resolve_composite_binding(
+            server,
+            composite,
+        )
+        for composite in config.composite_bindings
+    ]
+
     result = ImportedBindingResult(
         config=config,
         variable_nodes=(
@@ -493,6 +580,9 @@ async def resolve_imported_node_bindings(
         resolved_bindings=(
             resolved_bindings
         ),
+        resolved_composites=(
+            resolved_composites
+        ),
     )
 
     log_info(
@@ -500,7 +590,8 @@ async def resolve_imported_node_bindings(
         f"{len(result.resolved_bindings)} "
         "imported semantic OPC UA binding(s): "
         f"{result.new_binding_count} new, "
-        f"{result.replacement_count} replaced"
+        f"{result.replacement_count} replaced, "
+        f"{len(result.resolved_composites)} composite"
     )
 
     for item in result.resolved_bindings:

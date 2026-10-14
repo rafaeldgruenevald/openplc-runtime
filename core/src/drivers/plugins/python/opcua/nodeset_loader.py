@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 try:
+    from .model_paths import generated_root, resolve_model_file
     from .opcua_logging import log_debug, log_info
 except ImportError:
+    from model_paths import generated_root, resolve_model_file
     from opcua_logging import log_debug, log_info
 
 
@@ -23,42 +25,17 @@ def validate_nodeset_path(raw_path: str) -> Path:
     """
     Resolve and validate one NodeSet XML path.
 
-    The resolved file must:
-    - Be located below /opt/openplc/models
-    - Exist
-    - Be a regular file
-    - Have an .xml extension
+    A relative path is taken relative to the extracted program
+    (core/generated). The resolved file must be below that directory or
+    below /opt/openplc/models, exist, be a regular .xml file and be of
+    a bounded size.
     """
 
-    if not raw_path or not raw_path.strip():
-        raise ValueError("NodeSet path cannot be empty")
-
-    path = Path(raw_path).expanduser().resolve()
-
-    try:
-        path.relative_to(ALLOWED_MODEL_ROOT)
-    except ValueError as exc:
-        raise ValueError(
-            "NodeSet path is outside the allowed model directory: "
-            f"{path}"
-        ) from exc
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"NodeSet file does not exist: {path}"
-        )
-
-    if not path.is_file():
-        raise ValueError(
-            f"NodeSet path is not a regular file: {path}"
-        )
-
-    if path.suffix.lower() != ".xml":
-        raise ValueError(
-            f"NodeSet file must have an .xml extension: {path}"
-        )
-
-    return path
+    return resolve_model_file(
+        raw_path,
+        roots=(generated_root(), ALLOWED_MODEL_ROOT),
+        suffixes=(".xml",),
+    )
 
 
 async def import_nodesets(
