@@ -264,6 +264,12 @@ class OpcuaServerManager:
             # GDS reading this server) refuse an endpoint that names another one.
             await self.server.set_application_uri(self.config.server.application_uri)
 
+            # init() also wrote the default URI into ServerArray[0], which is how
+            # a GDS names the server an alias belongs to (OPC 10000-17).
+            await self.server.get_node(
+                ua.NodeId(ua.ObjectIds.Server_ServerArray)
+            ).write_value([self.config.server.application_uri], ua.VariantType.String)
+
             # Register namespace (AFTER init)
             self.namespace_idx = await self.server.register_namespace(
                 self.config.address_space.namespace_uri
