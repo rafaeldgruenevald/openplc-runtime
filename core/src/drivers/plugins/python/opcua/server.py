@@ -257,6 +257,13 @@ class OpcuaServerManager:
             await self.server.init()
             log_debug("OPC-UA server initialized")
 
+            # init() resets the application URI to asyncua's default, and a plain
+            # attribute assignment before it has no effect: the endpoints and the
+            # ServerArray announce whatever set_application_uri() was given last.
+            # The certificate was made for the configured URI, and clients (and a
+            # GDS reading this server) refuse an endpoint that names another one.
+            await self.server.set_application_uri(self.config.server.application_uri)
+
             # Register namespace (AFTER init)
             self.namespace_idx = await self.server.register_namespace(
                 self.config.address_space.namespace_uri

@@ -512,6 +512,26 @@ class OpcuaSecurityManager:
             log_warn(f"Failed to validate certificate {cert_path}: {e}")
             return False
 
+    def _certificate_has_uri(self, cert_path: str, app_uri: str) -> bool:
+        """
+        Whether the certificate names ``app_uri`` as a URI in its subject
+        alternative name. A client checks the ApplicationUri of the endpoint
+        against it (OPC 10000-6) and refuses the server when they differ, so a
+        certificate made for another application URI cannot be reused.
+        """
+        try:
+            with open(cert_path, "rb") as f:
+                cert = x509.load_pem_x509_certificate(f.read())
+
+            san = cert.extensions.get_extension_for_oid(
+                x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            ).value
+
+            return app_uri in san.get_values_for_type(x509.UniformResourceIdentifier)
+        except Exception as e:
+            log_warn(f"Could not read the application URI of {cert_path}: {e}")
+            return False
+
     def _remove_certificate_files(self, cert_path: str, key_path: str) -> None:
         """
         Remove existing certificate and key files.
@@ -967,6 +987,12 @@ class OpcuaSecurityManager:
                 need_generation = True
             elif not self._is_certificate_valid(str(cert_file)):
                 log_debug("Certificate is expired or invalid, will regenerate")
+                self._remove_certificate_files(str(cert_file), str(key_file))
+                need_generation = True
+            elif not self._certificate_has_uri(str(cert_file), app_uri):
+                log_warn(
+                    f"Certificate was not made for application URI {app_uri}, will regenerate"
+                )
                 self._remove_certificate_files(str(cert_file), str(key_file))
                 need_generation = True
 
