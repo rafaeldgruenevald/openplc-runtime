@@ -1195,6 +1195,12 @@ class OpcuaSecurityManager:
                         encryption_algorithm=serialization.NoEncryption(),
                     )
 
+                    # asyncua takes the certificate as DER; the file may be PEM
+                    if b"-----BEGIN CERTIFICATE-----" in cert_data:
+                        cert_data = x509.load_pem_x509_certificate(cert_data).public_bytes(
+                            serialization.Encoding.DER
+                        )
+
                     await server.load_certificate(cert_data)
                     await server.load_private_key(der_key_data)
                     log_debug("Custom server certificate loaded (PEM cert + DER key)")

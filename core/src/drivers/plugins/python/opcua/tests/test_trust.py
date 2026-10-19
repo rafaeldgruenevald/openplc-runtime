@@ -190,3 +190,50 @@ def test_the_trust_store_of_the_security_manager_trusts_what_it_was_given(tmp_pa
 
     assert trust.validate(leaf)
     assert not trust.validate(stranger)
+
+
+def test_a_pem_certificate_and_key_are_loaded_into_the_server(tmp_path, monkeypatch):
+    # custom credentials as the adapter ships them: PEM files
+    from asyncua import Server
+
+    k = key()
+    cert = certificate(k, "DCN01")
+
+    generated = tmp_path / "generated" / "conf" / "pki"
+    generated.mkdir(parents=True)
+    (generated / "server_cert.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (generated / "server_key.pem").write_bytes(
+        k.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+
+    monkeypatch.setenv("OPENPLC_GENERATED_DIR", str(tmp_path / "generated"))
+
+    security = manager(
+        tmp_path, cert="conf/pki/server_cert.pem", key="conf/pki/server_key.pem"
+    )
+
+    loaded = []
+
+    async def load():
+        server = Server()
+        await server.init()
+
+        original = server.load_certificate
+
+        async def spy(data, *args, **kwargs):
+            loaded.append(data)
+            return await original(data, *args, **kwargs)
+
+        server.load_certificate = spy
+
+        await security._setup_server_certificates_for_asyncua(server, URI)
+
+    asyncio.run(load())
+
+    # handed over as DER, whatever the file holds
+    assert len(loaded) == 1
+    assert x509.load_der_x509_certificate(loaded[0]).subject == cert.subject
