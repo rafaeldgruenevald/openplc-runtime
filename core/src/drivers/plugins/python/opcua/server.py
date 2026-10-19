@@ -62,10 +62,14 @@ except ImportError:
 from shared import SafeBufferAccess
 from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
 
+from asyncua.crypto.validator import CertificateValidator
+
 try:
     from .ocf_client import OcfClient
+    from .opcua_security import PEER_TRUST_OPTIONS
 except ImportError:
     from ocf_client import OcfClient
+    from opcua_security import PEER_TRUST_OPTIONS
 
 class OpcuaServerManager:
     """
@@ -440,19 +444,38 @@ class OpcuaServerManager:
         if ocf is None or not ocf.inputs:
             return
 
-        certs = os.path.join(self.plugin_dir, "certs")
+        credentials = self.security_manager.credential_files()
 
-        certificate = os.path.join(certs, "server_cert.pem")
-
-        private_key = os.path.join(certs, "server_key.pem")
-
-        if not (os.path.exists(certificate) and os.path.exists(private_key)):
+        if credentials is None:
             log_error(
-                "OCF client not started: the server certificate "
-                f"({certificate}) is needed for the channel to the GDS "
-                "(server_certificate_strategy must be auto_self_signed)"
+                "OCF client not started: the server certificate and key are "
+                "needed for the channel to the GDS (strategy auto_self_signed, "
+                "or a custom certificate and key)"
             )
             return
+
+        certificate, private_key = credentials
+
+        self._ocf_task = asyncio.create_task(
+            self._run_ocf_client(ocf, certificate, private_key)
+        )
+
+    async def _run_ocf_client(self, ocf, certificate: str, private_key: str) -> None:
+        # The servers the client reaches are held to the same trust list as
+        # the clients this server accepts.
+        validator = None
+
+        trusted = self.config.security.trusted_client_certificates
+
+        if trusted:
+            pems = [item["pem"] if isinstance(item, dict) else item for item in trusted]
+
+            trust_store = await self.security_manager.create_trust_store(pems)
+
+            if trust_store is not None:
+                validator = CertificateValidator(
+                    PEER_TRUST_OPTIONS, trust_store=trust_store
+                )
 
         self.ocf_client = OcfClient(
             ocf,
@@ -460,9 +483,10 @@ class OpcuaServerManager:
             self.config.server.application_uri,
             certificate,
             private_key,
+            validator=validator,
         )
 
-        self._ocf_task = asyncio.create_task(self.ocf_client.run())
+        await self.ocf_client.run()
 
     async def _stop_ocf_client(self) -> None:
         if self.ocf_client is not None:

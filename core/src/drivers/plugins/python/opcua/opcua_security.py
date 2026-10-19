@@ -32,7 +32,7 @@ from asyncua.crypto.security_policies import (
     SecurityPolicyBasic256Sha256,
 )
 from asyncua.crypto.truststore import TrustStore
-from asyncua.crypto.validator import CertificateValidator
+from asyncua.crypto.validator import CertificateValidator, CertificateValidatorOptions
 from asyncua.server.user_managers import UserRole
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -49,6 +49,19 @@ try:
     from .opcua_logging import log_debug, log_error, log_info, log_warn
 except ImportError:
     from opcua_logging import log_debug, log_error, log_info, log_warn
+
+# What a DCN checks of the certificate of its peer: validity period, the
+# ApplicationUri, the key usage, and that it is trusted (listed, or issued by a
+# CA of the list) and not revoked. The extended key usage and the application
+# type are left out: a DCN is client and server at once, and a GDS that reads
+# its aliases presents itself as a server.
+PEER_TRUST_OPTIONS = (
+    CertificateValidatorOptions.TIME_RANGE
+    | CertificateValidatorOptions.URI
+    | CertificateValidatorOptions.KEY_USAGE
+    | CertificateValidatorOptions.TRUSTED
+    | CertificateValidatorOptions.REVOKED
+)
 
 # ioctl constants for network interface enumeration (Linux)
 _SIOCGIFCONF = 0x8912  # ioctl request code to get interface configuration
@@ -511,6 +524,45 @@ class OpcuaSecurityManager:
         except Exception as e:
             log_warn(f"Failed to validate certificate {cert_path}: {e}")
             return False
+
+    def _custom_credential_paths(self) -> Tuple[str, str]:
+        """Certificate and private key of the custom strategy. A relative path
+        is taken inside the extracted program (core/generated), like the model
+        files; the file must stay inside it."""
+        try:
+            from .model_paths import generated_root, resolve_model_file
+        except ImportError:
+            from model_paths import generated_root, resolve_model_file
+
+        suffixes = (".pem", ".crt", ".key")
+        roots = (generated_root(),)
+
+        return (
+            str(resolve_model_file(self.config.security.server_certificate_custom, roots, suffixes)),
+            str(resolve_model_file(self.config.security.server_private_key_custom, roots, suffixes)),
+        )
+
+    def credential_files(self) -> Optional[Tuple[str, str]]:
+        """(certificate, private key) PEM files this server presents, for the
+        client side of the same application (the OCF client), or None."""
+        security = getattr(self.config, "security", None)
+
+        if security is None:
+            return None
+
+        if security.server_certificate_strategy == "auto_self_signed":
+            certs = os.path.join(self.plugin_dir, "certs")
+            pair = (os.path.join(certs, "server_cert.pem"), os.path.join(certs, "server_key.pem"))
+        elif security.server_certificate_custom and security.server_private_key_custom:
+            try:
+                pair = self._custom_credential_paths()
+            except (OSError, ValueError) as e:
+                log_error(f"Custom server credentials unusable: {e}")
+                return None
+        else:
+            return None
+
+        return pair if all(os.path.exists(x) for x in pair) else None
 
     def _certificate_has_uri(self, cert_path: str, app_uri: str) -> bool:
         """
@@ -1082,6 +1134,8 @@ class OpcuaSecurityManager:
             key_path = self.config.security.server_private_key_custom
             if cert_path and key_path:
                 try:
+                    cert_path, key_path = self._custom_credential_paths()
+
                     # Carregar certificado
                     with open(cert_path, "rb") as f:
                         cert_data = f.read()
@@ -1149,8 +1203,9 @@ class OpcuaSecurityManager:
                     log_warn(f"Failed to process trusted certificate {i + 1}: {e}")
 
             if cert_files:
-                # Create TrustStore with certificate files
-                trust_store = TrustStore(cert_files, [])
+                # A TrustStore location is a directory of certificates, not a
+                # file: handed the files it loaded nothing and trusted nobody.
+                trust_store = TrustStore([Path(temp_dir)], [])
                 await trust_store.load()
                 log_debug(f"TrustStore created with {len(cert_files)} certificates")
                 return trust_store
@@ -1202,7 +1257,13 @@ class OpcuaSecurityManager:
                 return
 
             # Create certificate validator
-            cert_validator = CertificateValidator(trust_store=trust_store)
+            # A client is accepted only if its certificate is in the list or
+            # issued by a certificate of it (a CA), and is still valid; the
+            # default options of asyncua check time and URI only.
+            cert_validator = CertificateValidator(
+                PEER_TRUST_OPTIONS,
+                trust_store=trust_store,
+            )
 
             # Set validator on server
             server.set_certificate_validator(cert_validator)

@@ -79,6 +79,7 @@ class OcfClient:
         certificate: str,
         private_key: str,
         writer: Callable[..., bool] = debug_write_value,
+        validator: Optional[Callable[..., Any]] = None,
     ):
         self.config = config
         self.runtime_args = runtime_args
@@ -86,6 +87,9 @@ class OcfClient:
         self.certificate = certificate
         self.private_key = private_key
         self.writer = writer
+        # Checks the certificate of the server on the other end: it must be
+        # in the trust list or issued by one of its CAs.
+        self.validator = validator
         self._tasks: List[asyncio.Task] = []
         # alias -> {"connected": bool, "server": str, "last_ok": float}
         self.state: Dict[str, Dict[str, Any]] = {}
@@ -126,7 +130,7 @@ class OcfClient:
             try:
                 source = await self._resolve(item.alias)
 
-                async with Client(source.endpoint, timeout=10) as client:
+                async with await self._peer_session(source.endpoint) as client:
                     index = await client.get_namespace_index(source.namespace_uri)
 
                     node = client.get_node(
@@ -175,8 +179,8 @@ class OcfClient:
 
     # -- the GDS ------------------------------------------------------------
 
-    async def _gds_session(self) -> Client:
-        client = Client(self.config.gds_url, timeout=10)
+    async def _secure_client(self, url: str) -> Client:
+        client = Client(url, timeout=10)
 
         client.application_uri = self.application_uri
 
@@ -184,7 +188,19 @@ class OcfClient:
             f"Basic256Sha256,SignAndEncrypt,{self.certificate},{self.private_key}"
         )
 
+        if self.validator is not None:
+            client.certificate_validator = self.validator
+
         return client
+
+    async def _gds_session(self) -> Client:
+        return await self._secure_client(self.config.gds_url)
+
+    async def _peer_session(self, url: str) -> Client:
+        if getattr(self.config, "secure", False):
+            return await self._secure_client(url)
+
+        return Client(url, timeout=10)
 
     async def _resolve(self, alias: str) -> Source:
         async with await self._gds_session() as gds:

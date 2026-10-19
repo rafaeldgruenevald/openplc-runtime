@@ -497,6 +497,9 @@ class OcfConfig:
     gds_url: str
     inputs: List[OcfInputConfig]
     period_ms: int = 100
+    # Open the channel to the source DCN with Basic256Sha256 SignAndEncrypt,
+    # with this DCN's certificate; the servers it reaches must be trusted.
+    secure: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OcfConfig':
@@ -516,10 +519,15 @@ class OcfConfig:
         if not isinstance(period, int) or period < 10:
             raise ValueError("ocf.period_ms must be an integer of at least 10")
 
+        secure = data.get("secure", False)
+        if not isinstance(secure, bool):
+            raise ValueError("ocf.secure must be true or false")
+
         return cls(
             gds_url=url.strip(),
             inputs=[OcfInputConfig.from_dict(item) for item in inputs],
             period_ms=period,
+            secure=secure,
         )
 
 @dataclass
