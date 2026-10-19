@@ -63,6 +63,42 @@ PEER_TRUST_OPTIONS = (
     | CertificateValidatorOptions.REVOKED
 )
 
+_NONE_POLICY_URI = "http://opcfoundation.org/UA/SecurityPolicy#None"
+
+_sessions_refused_on_none = False
+
+
+def refuse_sessions_on_unsecured_channels() -> None:
+    """A session on a SecureChannel with the policy None is refused
+    (BadSecurityPolicyRejected); discovery still works on it. asyncua serves a
+    None endpoint to sessions like any other, so this is done where it handles
+    the request: a client has to ask a secure server for its endpoints on an
+    unsecured channel (OPC 10000-4), and that is all this channel is for."""
+    global _sessions_refused_on_none
+
+    if _sessions_refused_on_none:
+        return
+
+    from asyncua.server.uaprocessor import UaProcessor
+
+    original = UaProcessor._process_message
+
+    create_session = ua.NodeId(ua.ObjectIds.CreateSessionRequest_Encoding_DefaultBinary)
+
+    async def guarded(self, typeid, requesthdr, seqhdr, body):
+        if (
+            typeid == create_session
+            and self._connection.security_policy.URI == _NONE_POLICY_URI
+        ):
+            raise ua.uaerrors.BadSecurityPolicyRejected()
+
+        return await original(self, typeid, requesthdr, seqhdr, body)
+
+    UaProcessor._process_message = guarded
+
+    _sessions_refused_on_none = True
+
+
 # ioctl constants for network interface enumeration (Linux)
 _SIOCGIFCONF = 0x8912  # ioctl request code to get interface configuration
 _SIZEOF_IFREQ = 40  # sizeof(struct ifreq) on 64-bit Linux
@@ -977,6 +1013,10 @@ class OpcuaSecurityManager:
 
             if policy_type is not None:
                 security_policies.append(policy_type)
+
+                if profile.discovery_only:
+                    refuse_sessions_on_unsecured_channels()
+
                 log_debug(
                     f"Added security profile '{profile.name}': {profile.security_policy}/{profile.security_mode} -> {policy_type}"
                 )

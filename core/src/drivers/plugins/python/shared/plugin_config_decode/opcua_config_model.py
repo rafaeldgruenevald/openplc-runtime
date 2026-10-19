@@ -77,6 +77,10 @@ class SecurityProfile:
     # Role for Anonymous sessions on this profile. Absent → 'viewer'.
     # Only meaningful when 'Anonymous' is in auth_methods.
     anonymous_role: str = "viewer"
+    # A None/None endpoint that answers discovery (GetEndpoints, FindServers)
+    # and nothing else: clients learn which secure endpoints there are, but no
+    # session opens on it.
+    discovery_only: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SecurityProfile':
@@ -104,13 +108,22 @@ class SecurityProfile:
                     f"'{name}'. Valid roles: {sorted(VALID_ROLES)}"
                 )
 
+        discovery_only = data.get("discovery_only", False)
+        if not isinstance(discovery_only, bool):
+            raise ValueError(f"discovery_only in security profile '{name}' must be true or false")
+        if discovery_only and (security_policy != "None" or security_mode != "None"):
+            raise ValueError(
+                f"Security profile '{name}': discovery_only is for the None/None endpoint"
+            )
+
         return cls(
             name=name,
             enabled=enabled,
             security_policy=security_policy,
             security_mode=security_mode,
             auth_methods=auth_methods,
-            anonymous_role=anonymous_role
+            anonymous_role=anonymous_role,
+            discovery_only=discovery_only
         )
 
 @dataclass
