@@ -164,6 +164,10 @@ class SecurityConfig:
     server_certificate_custom: Optional[str]
     server_private_key_custom: Optional[str]
     trusted_client_certificates: List[Dict[str, str]]
+    # Role of a peer whose certificate the trust list vouches for (it is listed,
+    # or a CA of the list issued it) and that has no user of its own. Absent: such
+    # a peer needs its own certificate user (the exact certificate in the list).
+    peer_role: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SecurityConfig':
@@ -173,11 +177,20 @@ class SecurityConfig:
         server_private_key_custom = data.get("server_private_key_custom")
         trusted_client_certificates = data.get("trusted_client_certificates", [])
 
+        peer_role = data.get("peer_role")
+        if peer_role is not None:
+            peer_role = str(peer_role).strip().lower()
+            if peer_role not in VALID_ROLES:
+                raise ValueError(
+                    f"Invalid peer_role '{data.get('peer_role')}'. Valid roles: {sorted(VALID_ROLES)}"
+                )
+
         return cls(
             server_certificate_strategy=server_certificate_strategy,
             server_certificate_custom=server_certificate_custom,
             server_private_key_custom=server_private_key_custom,
-            trusted_client_certificates=trusted_client_certificates
+            trusted_client_certificates=trusted_client_certificates,
+            peer_role=peer_role
         )
 
 @dataclass

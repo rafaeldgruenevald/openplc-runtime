@@ -529,6 +529,19 @@ class OpenPLCUserManager(UserManager):
         """
         cert_id = self._extract_cert_id(certificate)
         if not cert_id or cert_id not in self.cert_users:
+            # A peer with no user of its own: the channel already accepted its
+            # certificate against the trust list (listed, or issued by a CA of
+            # the list), so it is an authenticated application. peer_role says
+            # what such an application may do.
+            peer_role = getattr(self.config.security, "peer_role", None)
+
+            if peer_role and self.config.security.trusted_client_certificates:
+                asyncua_role = self.ROLE_MAPPING.get(peer_role, UserRole.User)
+
+                log_debug(f"Trusted peer authenticated with role '{peer_role}'")
+
+                return User(role=asyncua_role, name="trusted-peer"), peer_role
+
             log_warn(f"Certificate not found in trusted certificates (cert_id={cert_id})")
             return None, None
 

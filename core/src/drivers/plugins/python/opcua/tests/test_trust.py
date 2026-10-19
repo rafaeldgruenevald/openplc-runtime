@@ -237,3 +237,36 @@ def test_a_pem_certificate_and_key_are_loaded_into_the_server(tmp_path, monkeypa
     # handed over as DER, whatever the file holds
     assert len(loaded) == 1
     assert x509.load_der_x509_certificate(loaded[0]).subject == cert.subject
+
+
+def test_a_trusted_peer_without_a_user_gets_the_peer_role():
+    from types import SimpleNamespace
+    import user_manager
+
+    manager_ = user_manager.OpenPLCUserManager.__new__(user_manager.OpenPLCUserManager)
+
+    manager_.cert_users = {}
+    manager_._user_roles = {}
+    manager_.config = SimpleNamespace(
+        security=SimpleNamespace(trusted_client_certificates=[{"id": "a", "pem": "x"}], peer_role="viewer")
+    )
+    manager_._extract_cert_id = lambda certificate: None
+
+    user, role = manager_._authenticate_certificate(object())
+
+    assert role == "viewer"
+    assert user.name == "trusted-peer"
+
+    # no peer_role: such a peer is refused, as before
+    manager_.config.security.peer_role = None
+
+    assert manager_._authenticate_certificate(object()) == (None, None)
+
+
+def test_the_peer_role_must_be_a_known_role():
+    from shared.plugin_config_decode.opcua_config_model import SecurityConfig
+
+    assert SecurityConfig.from_dict({"peer_role": " Viewer "}).peer_role == "viewer"
+
+    with pytest.raises(ValueError):
+        SecurityConfig.from_dict({"peer_role": "root"})
