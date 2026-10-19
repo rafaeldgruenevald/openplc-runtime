@@ -223,6 +223,10 @@ class OcfClient:
                     continue
 
                 for target in entry.ReferencedNodes:
+                    # a target without a server index is a node of the GDS itself
+                    if not hasattr(target, "ServerIndex"):
+                        continue
+
                     server_uri = (
                         servers[target.ServerIndex]
                         if target.ServerIndex < len(servers)
