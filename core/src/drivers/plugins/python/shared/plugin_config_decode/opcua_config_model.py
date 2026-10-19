@@ -457,6 +457,72 @@ class SemanticModelConfig:
         return cls(nodesets=list(nodesets), bindings=bindings)
 
 @dataclass
+class OcfInputConfig:
+    """A signal this DCN takes from the OCF: the alias another DCN publishes
+    and the PLC variable (debug-map leaf) that receives its value."""
+    alias: str
+    array_index: int
+    element_index: int
+    datatype: str
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'OcfInputConfig':
+        if not isinstance(data, dict):
+            raise ValueError("ocf.inputs entries must be objects")
+
+        alias = data.get("alias")
+        if not isinstance(alias, str) or not alias.strip():
+            raise ValueError("ocf.inputs[].alias must be a non-empty string")
+
+        target = data.get("target")
+        if not isinstance(target, dict):
+            raise ValueError(f"ocf input {alias!r} needs a target")
+
+        array_index = target.get("arrayIndex")
+        element_index = target.get("elementIndex")
+        datatype = target.get("datatype")
+
+        if not isinstance(array_index, int) or not isinstance(element_index, int):
+            raise ValueError(f"ocf input {alias!r}: target arrayIndex and elementIndex must be integers")
+
+        if not isinstance(datatype, str) or not datatype:
+            raise ValueError(f"ocf input {alias!r}: target datatype must be a string")
+
+        return cls(alias.strip(), array_index, element_index, datatype)
+
+@dataclass
+class OcfConfig:
+    """The OCF client of the DCN (O-PAS Part 4): where the GDS is and which
+    signals of other DCNs the program reads. Optional."""
+    gds_url: str
+    inputs: List[OcfInputConfig]
+    period_ms: int = 100
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'OcfConfig':
+        if not isinstance(data, dict):
+            raise ValueError("ocf must be an object")
+
+        gds = data.get("gds")
+        url = gds.get("url") if isinstance(gds, dict) else None
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("ocf.gds.url must be an OPC UA endpoint URL")
+
+        inputs = data.get("inputs", [])
+        if not isinstance(inputs, list):
+            raise ValueError("ocf.inputs must be a list")
+
+        period = data.get("period_ms", 100)
+        if not isinstance(period, int) or period < 10:
+            raise ValueError("ocf.period_ms must be an integer of at least 10")
+
+        return cls(
+            gds_url=url.strip(),
+            inputs=[OcfInputConfig.from_dict(item) for item in inputs],
+            period_ms=period,
+        )
+
+@dataclass
 class OpcuaConfig:
     """Complete OPC-UA configuration."""
     server: ServerConfig
@@ -466,6 +532,7 @@ class OpcuaConfig:
     cycle_time_ms: int = 100  # Default cycle time in milliseconds
     format_version: int = 0  # opcua.json contract version (see gate in from_dict)
     semantic_model: Optional[SemanticModelConfig] = None
+    ocf: Optional[OcfConfig] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OpcuaConfig':
@@ -501,6 +568,9 @@ class OpcuaConfig:
             SemanticModelConfig.from_dict(semantic_data) if semantic_data is not None else None
         )
 
+        ocf_data = data.get("ocf")
+        ocf = OcfConfig.from_dict(ocf_data) if ocf_data is not None else None
+
         return cls(
             server=server,
             security=security,
@@ -508,7 +578,8 @@ class OpcuaConfig:
             address_space=address_space,
             cycle_time_ms=cycle_time_ms,
             format_version=format_version,
-            semantic_model=semantic_model
+            semantic_model=semantic_model,
+            ocf=ocf
         )
 
 @dataclass

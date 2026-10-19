@@ -62,6 +62,11 @@ except ImportError:
 from shared import SafeBufferAccess
 from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
 
+try:
+    from .ocf_client import OcfClient
+except ImportError:
+    from ocf_client import OcfClient
+
 class OpcuaServerManager:
     """
     Manages the OPC-UA server lifecycle and coordinates components.
@@ -132,6 +137,10 @@ class OpcuaServerManager:
         # Permission callback handler (initialized after address space)
         self.callback_handler: Optional[PermissionCallbackHandler] = None
 
+        # OCF client (signals taken from other DCNs, found through the GDS)
+        self.ocf_client: Optional[OcfClient] = None
+        self._ocf_task: Optional[asyncio.Task] = None
+
     async def run(self) -> None:
         """
         Initialize, start, and run the server.
@@ -183,6 +192,9 @@ class OpcuaServerManager:
             if not await self._start_server():
                 log_error("Failed to start server")
                 return
+
+            # The OCF client runs next to the server
+            self._start_ocf_client()
 
             # Run main loop
             log_debug("Server running, entering main loop...")
@@ -419,6 +431,50 @@ class OpcuaServerManager:
                     log_debug("Main loop cancelled")
                     break
 
+    def _start_ocf_client(self) -> None:
+        """Start the OCF client when the config has inputs. It needs the
+        certificate of this server to open a secure channel to the GDS; without
+        it the inputs cannot be served, which is reported, not fatal."""
+        ocf = getattr(self.config, "ocf", None)
+
+        if ocf is None or not ocf.inputs:
+            return
+
+        certs = os.path.join(self.plugin_dir, "certs")
+
+        certificate = os.path.join(certs, "server_cert.pem")
+
+        private_key = os.path.join(certs, "server_key.pem")
+
+        if not (os.path.exists(certificate) and os.path.exists(private_key)):
+            log_error(
+                "OCF client not started: the server certificate "
+                f"({certificate}) is needed for the channel to the GDS "
+                "(server_certificate_strategy must be auto_self_signed)"
+            )
+            return
+
+        self.ocf_client = OcfClient(
+            ocf,
+            self.buffer_accessor.runtime_args,
+            self.config.server.application_uri,
+            certificate,
+            private_key,
+        )
+
+        self._ocf_task = asyncio.create_task(self.ocf_client.run())
+
+    async def _stop_ocf_client(self) -> None:
+        if self.ocf_client is not None:
+            await self.ocf_client.stop()
+
+        if self._ocf_task is not None:
+            self._ocf_task.cancel()
+            await asyncio.gather(self._ocf_task, return_exceptions=True)
+
+        self.ocf_client = None
+        self._ocf_task = None
+
     async def _cleanup(self) -> None:
         """
         Clean up resources.
@@ -432,6 +488,8 @@ class OpcuaServerManager:
         sockets close.
         """
         try:
+            await self._stop_ocf_client()
+
             if self.server and self.running:
                 try:
                     await asyncio.wait_for(self.server.stop(), timeout=1.5)
