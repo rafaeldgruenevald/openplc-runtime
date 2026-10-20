@@ -15,6 +15,16 @@ if str(OPCUA_DIR) not in sys.path:
 import opcua_security  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def restore_asyncua(monkeypatch):
+    """The guard patches asyncua for the whole process: undo it after each
+    test so other servers in the suite still accept None sessions."""
+    from asyncua.server.uaprocessor import UaProcessor
+
+    monkeypatch.setattr(UaProcessor, "_process_message", UaProcessor._process_message)
+    monkeypatch.setattr(opcua_security, "_sessions_refused_on_none", False)
+
+
 def test_discovery_works_and_a_session_is_refused_on_the_none_channel():
     async def main():
         opcua_security.refuse_sessions_on_unsecured_channels()
