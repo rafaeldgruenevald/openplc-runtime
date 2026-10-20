@@ -378,6 +378,11 @@ async def _create_variable_node(
         is_array_element=False,
         array_index=None,
         array_length=None,
+        status_address=(
+            binding.status.address
+            if binding.status is not None
+            else None
+        ),
     )
 
     return (

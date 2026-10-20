@@ -339,6 +339,14 @@ class SynchronizationManager:
                         v = self._get_default_value(datatype)
                     variant = ua.Variant(convert_value_for_opcua(datatype, v), expected_type)
                 now = datetime.now(timezone.utc)
+                if not failed and node.status_address is not None:
+                    status = self._signal_status(node)
+                    return ua.DataValue(
+                        Value=None if ua.StatusCode(status).is_bad() else variant,
+                        StatusCode_=ua.StatusCode(status),
+                        SourceTimestamp=now,
+                        ServerTimestamp=now,
+                    )
                 if failed:
                     # BadNoDataAvailable rather than BadInternalError: the
                     # address space is sound, the runtime just has nothing to
@@ -527,7 +535,23 @@ class SynchronizationManager:
     async def _push_scalar_node(self, node: VariableNode, value: Any) -> None:
         opcua_value = convert_value_for_opcua(node.datatype, value)
         expected_type = map_plc_to_opcua_type(node.datatype)
-        await self._push_value(node, ua.Variant(opcua_value, expected_type))
+        variant = ua.Variant(opcua_value, expected_type)
+        if node.status_address is None:
+            await self._push_value(node, variant)
+            return
+        status = self._signal_status(node)
+        if ua.StatusCode(status).is_bad():
+            variant = ua.Variant()
+        await self._push_value(node, variant, status=status)
+
+    def _signal_status(self, node: VariableNode) -> int:
+        """The StatusCode the program keeps for the node's signal
+        (MetaData.Status); BadNoDataAvailable when it cannot be read."""
+        arr, elem = node.status_address
+        status = debug_read_value(self.args, arr, elem, "UDINT")
+        if status is None:
+            return ua.StatusCodes.BadNoDataAvailable
+        return int(status) & 0xFFFFFFFF
 
     async def _push_array_node(
         self, node: VariableNode, base_arr: int, base_elem: int

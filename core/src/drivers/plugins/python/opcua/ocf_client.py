@@ -12,7 +12,12 @@ configured input it
      the TagVariables category) and which server holds it,
   2. asks the GDS where that server is (FindApplications -> discovery URL),
   3. reads the node every period and soft-writes the value into the PLC
-     variable (debug_write), as the runtime's debugger would.
+     variable (debug_write), as the runtime's debugger would, and the
+     StatusCode into the signal's MetaData.Status when the input has one.
+
+The status says what the program can trust: the source's own StatusCode while
+the source answers, BadNoCommunication while it does not. The value is then
+left as it was, so a block can hold its last usable value.
 
 Nothing is cached across a failure: when the source disappears the client
 resolves the alias again, so a DCN that moved is found again through the GDS.
@@ -39,8 +44,19 @@ except ImportError:
 GDS_NAMESPACE = "http://opcfoundation.org/UA/GDS/"
 GDS_DIRECTORY = 141
 
+# OPC 10000-4 StatusCodes written into MetaData.Status.
+STATUS_GOOD = 0x00000000
+STATUS_BAD_NO_COMMUNICATION = 0x80310000
+
 BACKOFF_FIRST_S = 1.0
 BACKOFF_MAX_S = 10.0
+
+# Without ocf.stale_ms, a value is stale after this many periods (at least 1 s).
+STALE_PERIODS = 5
+STALE_MIN_MS = 1000
+
+# A secure session (two handshakes) needs more than one stale period.
+CONNECT_MIN_S = 5.0
 
 
 def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
@@ -94,6 +110,21 @@ class OcfClient:
         # alias -> {"connected": bool, "server": str, "last_ok": float}
         self.state: Dict[str, Dict[str, Any]] = {}
 
+    @property
+    def stale_s(self) -> float:
+        """How long a value may go without a fresh read before it is Bad."""
+        stale_ms = getattr(self.config, "stale_ms", None)
+
+        if not stale_ms:
+            stale_ms = max(STALE_MIN_MS, STALE_PERIODS * self.config.period_ms)
+
+        return stale_ms / 1000.0
+
+    @property
+    def connect_s(self) -> float:
+        """How long connecting to a source may take."""
+        return max(self.stale_s, CONNECT_MIN_S)
+
     # -- lifecycle ----------------------------------------------------------
 
     async def run(self) -> None:
@@ -130,7 +161,11 @@ class OcfClient:
             try:
                 source = await self._resolve(item.alias)
 
-                async with await self._peer_session(source.endpoint) as client:
+                client = await self._peer_session(source.endpoint)
+
+                try:
+                    await asyncio.wait_for(client.connect(), self.connect_s)
+
                     index = await client.get_namespace_index(source.namespace_uri)
 
                     node = client.get_node(
@@ -147,25 +182,33 @@ class OcfClient:
                     delay = BACKOFF_FIRST_S
 
                     while True:
-                        value = await node.read_data_value()
-
-                        if value.StatusCode.is_good() and value.Value is not None:
-                            self.writer(
-                                self.runtime_args,
-                                item.array_index,
-                                item.element_index,
-                                item.datatype,
-                                value.Value.Value,
+                        # A source that stops answering is Bad after stale_s,
+                        # not after the request timeout.
+                        try:
+                            value = await asyncio.wait_for(
+                                node.read_data_value(raise_on_bad_status=False), self.stale_s
                             )
+                        except Exception:
+                            # Bad at once: closing the session waits for the peer.
+                            self._write_status(item, STATUS_BAD_NO_COMMUNICATION)
+                            raise
 
+                        self._deliver(item, value)
+
+                        if value.StatusCode.is_good():
                             state["last_ok"] = time.monotonic()
 
                         await asyncio.sleep(self.config.period_ms / 1000.0)
+                finally:
+                    await self._close(client)
 
             except asyncio.CancelledError:
                 raise
 
             except Exception as error:
+                if isinstance(error, asyncio.TimeoutError):
+                    error = f"no answer in {self.stale_s:.1f} s"
+
                 if state.get("connected"):
                     log_warn(f"OCF input {item.alias}: lost the source ({error}); resolving it again")
                 else:
@@ -173,9 +216,49 @@ class OcfClient:
 
                 state["connected"] = False
 
+                self._write_status(item, STATUS_BAD_NO_COMMUNICATION)
+
                 await asyncio.sleep(delay)
 
                 delay = min(delay * 2, BACKOFF_MAX_S)
+
+    async def _close(self, client: Client) -> None:
+        """Close the session; a peer that does not answer is left behind."""
+        try:
+            await asyncio.wait_for(client.disconnect(), self.stale_s)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log_debug(f"OCF: closing the session with a silent peer ({error})")
+
+    def _deliver(self, item, value: ua.DataValue) -> None:
+        """Write what the source sent: the value when it has one that is not
+        Bad, and its StatusCode."""
+        status = value.StatusCode.value if value.StatusCode is not None else STATUS_GOOD
+
+        has_value = value.Value is not None and value.Value.Value is not None
+
+        if has_value and not value.StatusCode.is_bad():
+            self.writer(
+                self.runtime_args,
+                item.array_index,
+                item.element_index,
+                item.datatype,
+                value.Value.Value,
+            )
+
+        self._write_status(item, status)
+
+    def _write_status(self, item, status: int) -> None:
+        leaf = getattr(item, "status", None)
+
+        if leaf is None:
+            return
+
+        if not self.writer(
+            self.runtime_args, leaf.array_index, leaf.element_index, leaf.datatype, status
+        ):
+            log_debug(f"OCF input {item.alias}: could not write the status 0x{status:08X}")
 
     # -- the GDS ------------------------------------------------------------
 

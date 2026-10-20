@@ -3,6 +3,7 @@ pointed at and writes into the PLC, and the GDS record it decodes."""
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -137,3 +138,171 @@ def test_a_source_that_is_gone_is_resolved_again(monkeypatch):
         assert not client.state["PT101"]["connected"]
 
     asyncio.run(main())
+
+
+STATUS = SimpleNamespace(array_index=1, element_index=17, datatype="UDINT")
+
+
+def config_with_status(period_ms=20):
+    cfg = config(period_ms)
+    cfg.inputs[0].status = STATUS
+    return cfg
+
+
+def test_the_status_of_the_source_is_written_into_the_signal_status():
+    writes = []
+
+    def writer(args, arr, elem, datatype, value):
+        writes.append((arr, elem, datatype, value))
+        return True
+
+    async def test(value, index):
+        node_id = SimpleNamespace(Identifier="Dev.PT101", NodeIdType=ua.NodeIdType.String)
+
+        client = FakeClient(
+            "opc.tcp://127.0.0.1:48420/ocf-test", "urn:test:source", node_id,
+            config_with_status(), None, "urn:me", "c", "k", writer=writer,
+        )
+
+        task = asyncio.create_task(client.run())
+
+        await asyncio.sleep(0.5)
+
+        # the source reports its sensor failed: the status arrives, the value
+        # that came with it does not
+        await value.write_value(
+            ua.DataValue(
+                ua.Variant(99.0, ua.VariantType.Float),
+                ua.StatusCode(ua.StatusCodes.BadSensorFailure),
+            )
+        )
+
+        await asyncio.sleep(0.3)
+
+        await client.stop()
+
+        task.cancel()
+
+        values = [w[3] for w in writes if w[:3] == (1, 16, "REAL")]
+        statuses = [w[3] for w in writes if w[:3] == (1, 17, "UDINT")]
+
+        assert values and 99.0 not in values
+        assert statuses[0] == ocf_client.STATUS_GOOD
+        assert statuses[-1] == ua.StatusCodes.BadSensorFailure
+
+    run_with_source(test)
+
+
+def test_a_source_that_does_not_answer_is_bad_no_communication(monkeypatch):
+    monkeypatch.setattr(ocf_client, "BACKOFF_FIRST_S", 0.05)
+
+    writes = []
+
+    def writer(args, arr, elem, datatype, value):
+        writes.append((arr, elem, datatype, value))
+        return True
+
+    async def main():
+        node_id = SimpleNamespace(Identifier="Dev.PT101", NodeIdType=ua.NodeIdType.String)
+
+        client = FakeClient(
+            "opc.tcp://127.0.0.1:1/none", "urn:test:source", node_id,
+            config_with_status(), None, "urn:me", "c", "k", writer=writer,
+        )
+
+        task = asyncio.create_task(client.run())
+
+        await asyncio.sleep(0.5)
+
+        await client.stop()
+
+        task.cancel()
+
+        assert writes
+        assert all(w == (1, 17, "UDINT", ocf_client.STATUS_BAD_NO_COMMUNICATION) for w in writes)
+
+    asyncio.run(main())
+
+
+def test_an_input_without_a_status_leaf_writes_only_the_value(monkeypatch):
+    monkeypatch.setattr(ocf_client, "BACKOFF_FIRST_S", 0.05)
+
+    writes = []
+
+    async def main():
+        node_id = SimpleNamespace(Identifier="Dev.PT101", NodeIdType=ua.NodeIdType.String)
+
+        client = FakeClient(
+            "opc.tcp://127.0.0.1:1/none", "urn:test:source", node_id,
+            config(), None, "urn:me", "c", "k", writer=lambda *a: writes.append(a) or True,
+        )
+
+        task = asyncio.create_task(client.run())
+
+        await asyncio.sleep(0.3)
+
+        await client.stop()
+
+        task.cancel()
+
+        assert writes == []
+
+    asyncio.run(main())
+
+
+def test_a_source_that_stops_answering_is_bad_after_stale_ms(monkeypatch):
+    from asyncua.common.node import Node
+
+    writes = []
+
+    def writer(args, arr, elem, datatype, value):
+        writes.append((time.monotonic(), elem, value))
+        return True
+
+    async def test(value, index):
+        node_id = SimpleNamespace(Identifier="Dev.PT101", NodeIdType=ua.NodeIdType.String)
+
+        cfg = config_with_status()
+        cfg.stale_ms = 300
+
+        client = FakeClient(
+            "opc.tcp://127.0.0.1:48420/ocf-test", "urn:test:source", node_id,
+            cfg, None, "urn:me", "c", "k", writer=writer,
+        )
+
+        task = asyncio.create_task(client.run())
+
+        await asyncio.sleep(0.5)
+
+        # the source is still connected but answers nothing: neither reads
+        # nor the closing of the session
+        async def hang(self, *args, **kwargs):
+            await asyncio.sleep(30)
+
+        monkeypatch.setattr(Node, "read_data_value", hang)
+        monkeypatch.setattr(ocf_client.Client, "disconnect", hang)
+
+        frozen = time.monotonic()
+
+        await asyncio.sleep(0.8)
+
+        await client.stop()
+
+        task.cancel()
+
+        bad = [t for t, elem, v in writes if elem == 17 and v == ocf_client.STATUS_BAD_NO_COMMUNICATION]
+
+        assert bad, "the status never became BadNoCommunication"
+        assert bad[0] - frozen < 0.6
+
+    run_with_source(test)
+
+
+def test_the_stale_time_defaults_to_a_few_periods():
+    client = ocf_client.OcfClient(config(period_ms=100), None, "urn:me", "c", "k")
+
+    assert client.stale_s == 1.0
+
+    client = ocf_client.OcfClient(config(period_ms=500), None, "urn:me", "c", "k")
+
+    assert client.stale_s == 2.5

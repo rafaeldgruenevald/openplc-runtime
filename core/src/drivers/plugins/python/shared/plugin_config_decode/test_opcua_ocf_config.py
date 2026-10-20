@@ -81,6 +81,38 @@ class TestOcfConfig:
             ("PT101", 1, 16, "REAL")
         ]
 
+    def test_stale_ms_is_optional_and_parsed(self):
+        from opcua_config_model import OpcuaConfig
+
+        assert OpcuaConfig.from_dict(self._base(ocf=self.GOOD)).ocf.stale_ms is None
+
+        data = dict(self.GOOD, stale_ms=2000)
+
+        assert OpcuaConfig.from_dict(self._base(ocf=data)).ocf.stale_ms == 2000
+
+    def test_an_input_without_a_status_leaf_has_none(self):
+        from opcua_config_model import OpcuaConfig
+
+        assert OpcuaConfig.from_dict(self._base(ocf=self.GOOD)).ocf.inputs[0].status is None
+
+    def test_the_status_leaf_of_an_input_is_parsed(self):
+        import copy
+
+        from opcua_config_model import OpcuaConfig
+
+        data = copy.deepcopy(self.GOOD)
+        data["inputs"][0]["status"] = {
+            "symbol": "PT101.METADATA.STATUS",
+            "arrayIndex": 1,
+            "elementIndex": 17,
+            "datatype": "UDINT",
+            "size": 4,
+        }
+
+        status = OpcuaConfig.from_dict(self._base(ocf=data)).ocf.inputs[0].status
+
+        assert (status.array_index, status.element_index, status.datatype) == (1, 17, "UDINT")
+
     def test_the_period_defaults_to_100_ms(self):
         from opcua_config_model import OpcuaConfig
 
@@ -100,6 +132,13 @@ class TestOcfConfig:
             lambda d: d["inputs"][0].pop("target"),
             lambda d: d["inputs"][0]["target"].update(arrayIndex="1"),
             lambda d: d["inputs"][0]["target"].update(datatype=""),
+            lambda d: d.update(stale_ms=50),
+            lambda d: d.update(stale_ms="1000"),
+            lambda d: d["inputs"][0].update(status="PT101.METADATA.STATUS"),
+            lambda d: d["inputs"][0].update(status={"arrayIndex": 1, "elementIndex": 17}),
+            lambda d: d["inputs"][0].update(
+                status={"arrayIndex": 1, "elementIndex": 17, "datatype": "REAL"}
+            ),
         ],
     )
     def test_invalid_sections_are_rejected(self, mutate):

@@ -23,6 +23,8 @@ class VariableNode:
     is_array_element: bool = False
     array_index: Optional[int] = None  # 0..length-1 within the array
     array_length: Optional[int] = None  # Length of array (for array nodes only)
+    # (arr, elem) of a UDINT leaf holding the StatusCode the node is served with
+    status_address: Optional[Tuple[int, int]] = None
 
 @dataclass
 class VariableMetadata:

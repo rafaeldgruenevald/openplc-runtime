@@ -483,13 +483,39 @@ class SemanticModelConfig:
         return cls(nodesets=list(nodesets), bindings=bindings)
 
 @dataclass
+class OcfLeafConfig:
+    """A PLC variable (debug-map leaf) the OCF client writes."""
+    array_index: int
+    element_index: int
+    datatype: str
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], what: str) -> 'OcfLeafConfig':
+        if not isinstance(data, dict):
+            raise ValueError(f"{what} must be an object")
+
+        array_index = data.get("arrayIndex")
+        element_index = data.get("elementIndex")
+        datatype = data.get("datatype")
+
+        if not isinstance(array_index, int) or not isinstance(element_index, int):
+            raise ValueError(f"{what}: arrayIndex and elementIndex must be integers")
+
+        if not isinstance(datatype, str) or not datatype:
+            raise ValueError(f"{what}: datatype must be a string")
+
+        return cls(array_index, element_index, datatype)
+
+@dataclass
 class OcfInputConfig:
-    """A signal this DCN takes from the OCF: the alias another DCN publishes
-    and the PLC variable (debug-map leaf) that receives its value."""
+    """A signal this DCN takes from the OCF: the alias another DCN publishes,
+    the PLC variable (debug-map leaf) that receives its value and, optionally,
+    the one that receives its StatusCode (the signal's MetaData.Status)."""
     alias: str
     array_index: int
     element_index: int
     datatype: str
+    status: Optional[OcfLeafConfig] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OcfInputConfig':
@@ -500,21 +526,24 @@ class OcfInputConfig:
         if not isinstance(alias, str) or not alias.strip():
             raise ValueError("ocf.inputs[].alias must be a non-empty string")
 
-        target = data.get("target")
-        if not isinstance(target, dict):
+        if not isinstance(data.get("target"), dict):
             raise ValueError(f"ocf input {alias!r} needs a target")
 
-        array_index = target.get("arrayIndex")
-        element_index = target.get("elementIndex")
-        datatype = target.get("datatype")
+        target = OcfLeafConfig.from_dict(data["target"], f"ocf input {alias!r}: target")
 
-        if not isinstance(array_index, int) or not isinstance(element_index, int):
-            raise ValueError(f"ocf input {alias!r}: target arrayIndex and elementIndex must be integers")
+        status = None
+        if data.get("status") is not None:
+            status = OcfLeafConfig.from_dict(data["status"], f"ocf input {alias!r}: status")
 
-        if not isinstance(datatype, str) or not datatype:
-            raise ValueError(f"ocf input {alias!r}: target datatype must be a string")
+            if status.datatype.upper() not in ("UDINT", "DWORD"):
+                raise ValueError(
+                    f"ocf input {alias!r}: status must be a UDINT or DWORD leaf, "
+                    f"not {status.datatype}"
+                )
 
-        return cls(alias.strip(), array_index, element_index, datatype)
+        return cls(
+            alias.strip(), target.array_index, target.element_index, target.datatype, status
+        )
 
 @dataclass
 class OcfConfig:
@@ -526,6 +555,9 @@ class OcfConfig:
     # Open the channel to the source DCN with Basic256Sha256 SignAndEncrypt,
     # with this DCN's certificate; the servers it reaches must be trusted.
     secure: bool = False
+    # A value not refreshed for this long is BadNoCommunication; None leaves
+    # it to the client (a few periods).
+    stale_ms: Optional[int] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OcfConfig':
@@ -549,11 +581,18 @@ class OcfConfig:
         if not isinstance(secure, bool):
             raise ValueError("ocf.secure must be true or false")
 
+        stale = data.get("stale_ms")
+        if stale is not None and (
+            not isinstance(stale, int) or isinstance(stale, bool) or stale < period
+        ):
+            raise ValueError("ocf.stale_ms must be an integer of at least ocf.period_ms")
+
         return cls(
             gds_url=url.strip(),
             inputs=[OcfInputConfig.from_dict(item) for item in inputs],
             period_ms=period,
             secure=secure,
+            stale_ms=stale,
         )
 
 @dataclass

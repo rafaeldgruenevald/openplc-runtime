@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 SUPPORTED_SCHEMA_VERSION = "1.0"
@@ -42,6 +42,7 @@ SUPPORTED_COMPOSITE_STRUCTURES = {
     "Range": ("Low", "High"),
 }
 COMPOSITE_FIELD_DATATYPES = frozenset({"REAL", "LREAL"})
+STATUS_DATATYPES = frozenset({"UDINT", "DWORD"})
 SUPPORTED_UPDATE_MODES = frozenset(
     {
         "subscription-aware",
@@ -524,6 +525,9 @@ class SemanticBinding:
     types: BindingTypes
     access: BindingAccess
     update: BindingUpdate
+    # Leaf whose value is the StatusCode the node is served with (the
+    # signal's MetaData.Status); without it the node is Good when readable.
+    status: Optional[OpenPLCDebugLeaf] = None
 
     @classmethod
     def from_dict(
@@ -575,6 +579,16 @@ class SemanticBinding:
             update=BindingUpdate.from_dict(
                 update_data
             ),
+            status=(
+                OpenPLCDebugLeaf.from_dict(
+                    _require_dict(
+                        data["status"],
+                        "status",
+                    )
+                )
+                if data.get("status") is not None
+                else None
+            ),
         )
 
         binding.validate_consistency()
@@ -591,6 +605,16 @@ class SemanticBinding:
                 "inconsistent IEC types: source uses "
                 f"{self.source.datatype}, types.iec uses "
                 f"{self.types.iec}"
+            )
+
+        if (
+            self.status is not None
+            and self.status.datatype not in STATUS_DATATYPES
+        ):
+            raise ValueError(
+                f"Binding {self.binding_id!r} has a "
+                f"{self.status.datatype} status leaf; "
+                "a StatusCode is UDINT or DWORD"
             )
 
 
