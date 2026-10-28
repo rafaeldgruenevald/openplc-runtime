@@ -407,9 +407,23 @@ class OpenPLCRoleRuleset(PermissionRuleset):
         Returns:
             True if user has permission, False otherwise
         """
-        if action_type_id in self._permission_dict.get(user.role, set()):
-            return True
-        return False
+        if action_type_id not in self._permission_dict.get(user.role, set()):
+            return False
+
+        # the certificate management methods are for the certificate manager only
+        if action_type_id == ua.NodeId(ua.ObjectIds.CallRequest_Encoding_DefaultBinary) and user.role != UserRole.Admin:
+            try:
+                from .certificate_push import PUSH_METHODS
+            except ImportError:
+                from certificate_push import PUSH_METHODS
+
+            parameters = getattr(body, "Parameters", None)
+
+            for call in getattr(parameters, "MethodsToCall", None) or []:
+                if call.MethodId in PUSH_METHODS:
+                    return False
+
+        return True
 
 class OpcuaSecurityManager:
     """Manages OPC-UA security configuration and certificates."""
@@ -566,9 +580,20 @@ class OpcuaSecurityManager:
         is taken inside the extracted program (core/generated), like the model
         files; the file must stay inside it."""
         try:
+            from .certificate_push import pushed_credentials
             from .model_paths import generated_root, resolve_model_file
         except ImportError:
+            from certificate_push import pushed_credentials
             from model_paths import generated_root, resolve_model_file
+
+        # a certificate a manager pushed (and applied) replaces the program's
+        pushed = pushed_credentials(
+            getattr(self.config.security, "certificate_store", None),
+            self.config.server.application_uri,
+        )
+
+        if pushed:
+            return pushed
 
         suffixes = (".pem", ".crt", ".key")
         roots = (generated_root(),)

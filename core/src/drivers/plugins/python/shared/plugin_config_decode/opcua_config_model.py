@@ -168,6 +168,9 @@ class SecurityConfig:
     # or a CA of the list issued it) and that has no user of its own. Absent: such
     # a peer needs its own certificate user (the exact certificate in the list).
     peer_role: Optional[str] = None
+    # Folder where a certificate manager's pushed certificate and key are kept
+    # (OPC 10000-12 push, certificate_push.py); absent: push is not supported.
+    certificate_store: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SecurityConfig':
@@ -190,7 +193,8 @@ class SecurityConfig:
             server_certificate_custom=server_certificate_custom,
             server_private_key_custom=server_private_key_custom,
             trusted_client_certificates=trusted_client_certificates,
-            peer_role=peer_role
+            peer_role=peer_role,
+            certificate_store=data.get("certificate_store") or None
         )
 
 @dataclass

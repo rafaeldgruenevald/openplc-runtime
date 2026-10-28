@@ -300,7 +300,7 @@ def _run_server_thread() -> None:
 
     async def _run_with_stop_check():
         """Run server with stop event monitoring."""
-        global _loop
+        global _loop, _server_manager
         _loop = asyncio.get_running_loop()
 
         # Create stop monitoring task
@@ -316,7 +316,15 @@ def _run_server_thread() -> None:
         monitor_task = asyncio.create_task(_monitor_stop())
 
         try:
-            await _server_manager.run()
+            while True:
+                await _server_manager.run()
+
+                # ApplyChanges of a pushed certificate: a new server loads it
+                if _stop_event.is_set() or not getattr(_server_manager, "restart_requested", False):
+                    break
+
+                log_info("OPC-UA server restarting with the new certificate")
+                _server_manager = OpcuaServerManager(_config, _buffer_accessor, os.path.dirname(__file__))
         except asyncio.CancelledError:
             pass
         finally:
