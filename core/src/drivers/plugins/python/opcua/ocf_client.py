@@ -8,8 +8,8 @@ A DCN takes the signals other DCNs publish through this client, which the
 program reads as ordinary variables (the OCFB_IN of the AML). For each
 configured input it
 
-  1. asks the GDS which node the alias stands for (OPC 10000-17 FindAlias on
-     the TagVariables category) and which server holds it,
+  1. asks the GDS which node the alias stands for (OPC 10000-17 FindAliasVerbose,
+     or FindAlias, on the TagVariables category) and which server holds it,
   2. asks the GDS where that server is (FindApplications -> discovery URL),
   3. reads the node every period and soft-writes the value into the PLC
      variable (debug_write), as the runtime's debugger would, and the
@@ -73,6 +73,65 @@ def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
     urls = binary.unpack_uatype_array(ua.VariantType.String, data) or []
 
     return uri, list(urls)
+
+
+def decode_alias_verbose(body: bytes) -> Tuple[str, List[Any], List[str]]:
+    """(AliasName, ReferencedNodes, ServerUris) of an AliasNameVerboseDataType in its
+    binary encoding (OPC 10000-17 1.05 §7.3). asyncua 1.1 does not know the type."""
+    data = Buffer(body)
+
+    name = binary.struct_from_binary(ua.QualifiedName, data)
+    count = binary.unpack_uatype(ua.VariantType.Int32, data)
+    nodes = [binary.nodeid_from_binary(data) for _ in range(max(count, 0))]
+    servers = binary.unpack_uatype_array(ua.VariantType.String, data) or []
+
+    return name.Name, nodes, list(servers)
+
+
+def server_of(target: Any, servers: List[str]) -> str:
+    """The URI of the server holding target, from its index in the ServerArray of the
+    GDS; empty for a node of the GDS itself (no index, or index 0)."""
+    index = getattr(target, "ServerIndex", None) or 0
+
+    return servers[index] if 0 < index < len(servers) else ""
+
+
+async def alias_targets(category: Any, alias: str, servers: List[str]) -> List[Tuple[str, Any, str]]:
+    """(alias name, target node, server URI) of every target the category knows for alias.
+
+    FindAliasVerbose names the server of each target, also for an alias added to the GDS
+    with AddAliasesToCategory, which FindAlias returns without a server index (the
+    reference GDS); FindAlias is kept for a GDS without the verbose method."""
+    try:
+        found = await category.call_method(
+            ua.QualifiedName("FindAliasVerbose", 0), alias, ua.NodeId(ua.ObjectIds.AliasFor)
+        )
+    except ua.UaStatusCodeError as error:
+        log_debug(f"FindAliasVerbose unavailable ({error}); using FindAlias")
+    else:
+        targets = []
+
+        for entry in found or []:
+            if isinstance(entry, ua.ExtensionObject):
+                name, nodes, uris = decode_alias_verbose(entry.Body)
+            else:
+                name, nodes, uris = entry.AliasName.Name, entry.ReferencedNodes, entry.ServerUris
+
+            for i, node in enumerate(nodes):
+                uri = uris[i] if i < len(uris) and uris[i] else server_of(node, servers)
+                targets.append((name, node, uri))
+
+        return targets
+
+    found = await category.call_method(
+        ua.QualifiedName("FindAlias", 0), alias, ua.NodeId(ua.ObjectIds.AliasFor)
+    )
+
+    return [
+        (entry.AliasName.Name, node, server_of(node, servers))
+        for entry in found or []
+        for node in entry.ReferencedNodes
+    ]
 
 
 class Source:
@@ -293,32 +352,12 @@ class OcfClient:
 
             category = gds.get_node(ua.NodeId(ua.ObjectIds.TagVariables))
 
-            found = await category.call_method(
-                ua.QualifiedName("FindAlias", 0),
-                alias,
-                ua.NodeId(ua.ObjectIds.AliasFor),
-            )
-
             candidates = []
 
-            for entry in found or []:
-                if entry.AliasName.Name != alias:
-                    continue
-
-                for target in entry.ReferencedNodes:
-                    # a target without a server index is a node of the GDS itself
-                    if not hasattr(target, "ServerIndex"):
-                        continue
-
-                    server_uri = (
-                        servers[target.ServerIndex]
-                        if target.ServerIndex < len(servers)
-                        else ""
-                    )
-
-                    # the alias of this very DCN is not an input
-                    if server_uri and server_uri != self.application_uri:
-                        candidates.append((server_uri, target))
+            for name, target, server_uri in await alias_targets(category, alias, servers):
+                # the alias of this very DCN is not an input; no server URI: a node of the GDS
+                if name == alias and server_uri and server_uri != self.application_uri:
+                    candidates.append((server_uri, target))
 
             if not candidates:
                 raise LookupError(f"the GDS knows no other server that publishes {alias!r}")
