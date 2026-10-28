@@ -2,6 +2,7 @@
 pointed at and writes into the PLC, and the GDS record it decodes."""
 
 import asyncio
+import dataclasses
 import sys
 import time
 from pathlib import Path
@@ -37,6 +38,76 @@ def test_the_application_record_of_the_gds_is_decoded():
 
     assert uri == "urn:dcn:2"
     assert urls == ["opc.tcp://a:4840", "opc.tcp://b:4840"]
+
+
+SERVERS = ["urn:gds", "urn:dcn:1", "urn:dcn:2"]
+
+
+def expanded(text, server_index=None):
+    return dataclasses.replace(ua.ExpandedNodeId.from_string(text), ServerIndex=server_index)
+
+
+def verbose(name, nodes, uris):
+    return b"".join([
+        binary.struct_to_binary(ua.QualifiedName(name, 0)),
+        binary.pack_uatype(ua.VariantType.Int32, len(nodes)),
+        *[binary.nodeid_to_binary(node) for node in nodes],
+        binary.pack_uatype_array(ua.VariantType.String, uris),
+    ])
+
+
+class FakeCategory:
+    """The TagVariables category of a GDS: FindAliasVerbose answers with entries in
+    their binary encoding unless the GDS has no such method."""
+
+    def __init__(self, entries, find_alias=None):
+        self.entries = entries
+        self.find_alias = find_alias
+
+    async def call_method(self, method, *args):
+        if method.Name == "FindAliasVerbose":
+            if self.entries is None:
+                raise ua.UaStatusCodeError(ua.StatusCodes.BadMethodInvalid)
+            return [ua.ExtensionObject(Body=body) for body in self.entries]
+        return self.find_alias
+
+
+def test_an_alias_verbose_entry_is_decoded():
+    node = expanded("nsu=urn:x;s=PT101", 2)
+
+    name, nodes, uris = ocf_client.decode_alias_verbose(verbose("PT101", [node], ["urn:dcn:2"]))
+
+    assert name == "PT101"
+    assert [(n.Identifier, n.NamespaceUri, n.ServerIndex) for n in nodes] == [("PT101", "urn:x", 2)]
+    assert uris == ["urn:dcn:2"]
+
+
+def test_an_alias_added_to_the_gds_keeps_its_server():
+    # AddAliasesToCategory: the target has no server index, only the verbose answer names the server
+    category = FakeCategory([
+        verbose("PT101", [expanded("nsu=urn:codesys;b=AQAAAA==")], ["urn:nx3008"]),
+        verbose("CV101", [expanded("nsu=urn:x;s=CV101", 1)], ["urn:dcn:1"]),
+        verbose("LOCAL", [expanded("nsu=urn:x;s=Here")], [""]),
+    ])
+
+    found = asyncio.run(ocf_client.alias_targets(category, "%", SERVERS))
+
+    assert [(name, uri) for name, _, uri in found] == [
+        ("PT101", "urn:nx3008"), ("CV101", "urn:dcn:1"), ("LOCAL", ""),
+    ]
+
+
+def test_a_gds_without_find_alias_verbose_is_asked_with_find_alias():
+    entry = SimpleNamespace(
+        AliasName=ua.QualifiedName("PT101", 0),
+        ReferencedNodes=[expanded("nsu=urn:x;s=PT101", 2), ua.NodeId("Here", 1)],
+    )
+    category = FakeCategory(None, find_alias=[entry])
+
+    found = asyncio.run(ocf_client.alias_targets(category, "PT101", SERVERS))
+
+    # the second target has no server index: a node of the GDS itself
+    assert [uri for _, _, uri in found] == ["urn:dcn:2", ""]
 
 
 class FakeClient(ocf_client.OcfClient):
