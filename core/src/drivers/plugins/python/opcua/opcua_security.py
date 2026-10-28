@@ -407,9 +407,23 @@ class OpenPLCRoleRuleset(PermissionRuleset):
         Returns:
             True if user has permission, False otherwise
         """
-        if action_type_id in self._permission_dict.get(user.role, set()):
-            return True
-        return False
+        if action_type_id not in self._permission_dict.get(user.role, set()):
+            return False
+
+        # the certificate management methods are for the certificate manager only
+        if action_type_id == ua.NodeId(ua.ObjectIds.CallRequest_Encoding_DefaultBinary) and user.role != UserRole.Admin:
+            try:
+                from .certificate_push import PUSH_METHODS
+            except ImportError:
+                from certificate_push import PUSH_METHODS
+
+            parameters = getattr(body, "Parameters", None)
+
+            for call in getattr(parameters, "MethodsToCall", None) or []:
+                if call.MethodId in PUSH_METHODS:
+                    return False
+
+        return True
 
 class OpcuaSecurityManager:
     """Manages OPC-UA security configuration and certificates."""
@@ -578,6 +592,22 @@ class OpcuaSecurityManager:
             str(resolve_model_file(self.config.security.server_private_key_custom, roots, suffixes)),
         )
 
+    def _pushed_credentials(self) -> Optional[Tuple[str, str]]:
+        """(certificate, key) a certificate manager pushed and applied (OPC
+        10000-12): valid and for this ApplicationUri, they replace whatever the
+        strategy would give."""
+        try:
+            from .certificate_push import pushed_credentials
+        except ImportError:
+            from certificate_push import pushed_credentials
+
+        security = getattr(self.config, "security", None)
+
+        return pushed_credentials(
+            getattr(security, "certificate_store", None),
+            getattr(self.config.server, "application_uri", None),
+        )
+
     def credential_files(self) -> Optional[Tuple[str, str]]:
         """(certificate, private key) PEM files this server presents, for the
         client side of the same application (the OCF client), or None."""
@@ -585,6 +615,11 @@ class OpcuaSecurityManager:
 
         if security is None:
             return None
+
+        pushed = self._pushed_credentials()
+
+        if pushed:
+            return pushed
 
         if security.server_certificate_strategy == "auto_self_signed":
             certs = os.path.join(self.plugin_dir, "certs")
@@ -1047,6 +1082,34 @@ class OpcuaSecurityManager:
         await self._setup_server_certificates_for_asyncua(server, app_uri)
         log_debug("=== END CERTIFICATE SETUP DEBUG ===")
 
+    async def _load_pushed_credentials(self, server) -> bool:
+        """Load the pushed certificate and key into the server, when there are."""
+        pushed = self._pushed_credentials()
+
+        if not pushed:
+            return False
+
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+        certificate_file, key_file = pushed
+
+        with open(certificate_file, "rb") as f:
+            certificate = x509.load_pem_x509_certificate(f.read())
+
+        with open(key_file, "rb") as f:
+            private_key = load_pem_private_key(f.read(), password=None)
+
+        await server.load_certificate(certificate.public_bytes(serialization.Encoding.DER))
+        await server.load_private_key(private_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ))
+
+        log_info(f"OPC-UA server certificate: the one pushed by the certificate manager ({certificate_file})")
+
+        return True
+
     async def _setup_server_certificates_for_asyncua(self, server, app_uri: str = None) -> None:
         """Setup server certificates for asyncua Server.
 
@@ -1054,6 +1117,9 @@ class OpcuaSecurityManager:
             server: asyncua Server instance
             app_uri: Application URI for the certificate (from config)
         """
+        if await self._load_pushed_credentials(server):
+            return
+
         if (
             hasattr(self.config, "security")
             and self.config.security.server_certificate_strategy == "auto_self_signed"

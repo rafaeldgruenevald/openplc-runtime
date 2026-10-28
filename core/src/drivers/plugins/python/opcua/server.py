@@ -65,9 +65,11 @@ from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
 from asyncua.crypto.validator import CertificateValidator
 
 try:
+    from .certificate_push import CertificatePush
     from .ocf_client import OcfClient
     from .opcua_security import PEER_TRUST_OPTIONS
 except ImportError:
+    from certificate_push import CertificatePush
     from ocf_client import OcfClient
     from opcua_security import PEER_TRUST_OPTIONS
 
@@ -145,6 +147,13 @@ class OpcuaServerManager:
         self.ocf_client: Optional[OcfClient] = None
         self._ocf_task: Optional[asyncio.Task] = None
 
+        # Push certificate management; a new certificate needs a new server
+        self.certificate_push: Optional[CertificatePush] = None
+        self.restart_requested = False
+
+        # The listening sockets are open: they must be closed before a new server binds
+        self._server_started = False
+
     async def run(self) -> None:
         """
         Initialize, start, and run the server.
@@ -164,6 +173,8 @@ class OpcuaServerManager:
             if not await self._setup_server():
                 log_error("Failed to setup server")
                 return
+
+            await self._link_certificate_push()
 
             if not await self._import_configured_nodesets():
                 log_warn("Failed to import OPC UA NodeSets")
@@ -209,6 +220,25 @@ class OpcuaServerManager:
             traceback.print_exc()
         finally:
             await self._cleanup()
+
+    async def _link_certificate_push(self) -> None:
+        """OPC 10000-12 push: a certificate manager may renew this server's
+        certificate (ServerConfiguration methods)."""
+        self.certificate_push = CertificatePush(
+            self.config.server.application_uri,
+            getattr(self.config.security, "certificate_store", None),
+            self.security_manager.credential_files,
+            self._restart_for_new_certificate,
+            getattr(self.config.security, "certificate_hosts", None),
+        )
+
+        await self.certificate_push.link(self.server)
+
+    def _restart_for_new_certificate(self) -> None:
+        """ApplyChanges: end this run; the plugin starts a new server, which
+        loads the pushed certificate."""
+        self.restart_requested = True
+        self.running = False
 
     async def stop(self) -> None:
         """
@@ -392,6 +422,7 @@ class OpcuaServerManager:
 
             await self.server.start()
             self.running = True
+            self._server_started = True
 
             log_info(f"OPC-UA server started on {self.config.server.endpoint_url}")
 
@@ -514,7 +545,9 @@ class OpcuaServerManager:
         try:
             await self._stop_ocf_client()
 
-            if self.server and self.running:
+            # running is already False when stop() or a restart ended the loop:
+            # what matters is whether the server bound its sockets
+            if self.server and self._server_started:
                 try:
                     await asyncio.wait_for(self.server.stop(), timeout=1.5)
                     log_info("OPC-UA server stopped")
