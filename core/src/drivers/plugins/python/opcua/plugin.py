@@ -280,6 +280,11 @@ def cleanup() -> bool:
         log_error(f"Cleanup error: {e}")
         return False
 
+# A server restarted after ApplyChanges that cannot bind yet tries again.
+RESTART_RETRIES = 15
+RESTART_RETRY_S = 2.0
+
+
 def _cancel_all_tasks(loop):
     """Cancel all running tasks on the event loop.
 
@@ -316,14 +321,27 @@ def _run_server_thread() -> None:
         monitor_task = asyncio.create_task(_monitor_stop())
 
         try:
+            retries = 0
+
             while True:
                 await _server_manager.run()
 
-                # ApplyChanges of a pushed certificate or trust list: a new server loads it
-                if _stop_event.is_set() or not getattr(_server_manager, "restart_requested", False):
+                if _stop_event.is_set():
                     break
 
-                log_info("OPC-UA server restarting with the pushed certificate or trust list")
+                # a restarted server that could not bind yet (the old one still
+                # closing) tries again for a while
+                if getattr(_server_manager, "start_failed", False) and 0 < retries <= RESTART_RETRIES:
+                    log_warn(f"OPC-UA server did not start; retry {retries} of {RESTART_RETRIES}")
+                    await asyncio.sleep(RESTART_RETRY_S)
+                    retries += 1
+                elif getattr(_server_manager, "restart_requested", False):
+                    # ApplyChanges of a pushed certificate or trust list: a new server loads it
+                    log_info("OPC-UA server restarting with the pushed certificate or trust list")
+                    retries = 1
+                else:
+                    break
+
                 _server_manager = OpcuaServerManager(_config, _buffer_accessor, os.path.dirname(__file__))
         except asyncio.CancelledError:
             pass
