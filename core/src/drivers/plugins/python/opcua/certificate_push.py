@@ -18,13 +18,20 @@ certificate back:
   3. ApplyChanges: the credentials are written to the certificate store (a
      folder that outlives a new program) and the server restarts with them.
 
+The trust list of the default application group (TrustList object, a file of
+a TrustListDataType, §7.8.2) is managed the same way: the manager writes it
+(Open, Write, CloseAndUpdate) or changes one certificate (AddCertificate,
+RemoveCertificate); ApplyChanges keeps it in the certificate store and the
+new server takes it in place of the program's list (apply_pushed_trust_list).
+
 Only a caller with the engineer role may call these methods
-(OpenPLCRoleRuleset). The trust list (TrustList object) is not managed here:
-the trusted certificates still come with the program.
+(OpenPLCRoleRuleset).
 """
 
 import asyncio
+import copy
 import datetime
+import hashlib
 import ipaddress
 import os
 import tempfile
@@ -32,6 +39,8 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from asyncua import ua
+from asyncua.common.utils import Buffer
+from asyncua.ua import ua_binary as binary
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -47,10 +56,26 @@ UPDATE_CERTIFICATE = ua.ObjectIds.ServerConfiguration_UpdateCertificate
 APPLY_CHANGES = ua.ObjectIds.ServerConfiguration_ApplyChanges
 GET_REJECTED_LIST = ua.ObjectIds.ServerConfiguration_GetRejectedList
 
+_TRUST = "ServerConfiguration_CertificateGroups_DefaultApplicationGroup_TrustList"
+TRUST_LIST = getattr(ua.ObjectIds, _TRUST)
+TRUST_METHODS = {
+    name: getattr(ua.ObjectIds, f"{_TRUST}_{name}")
+    for name in ("Open", "OpenWithMasks", "Read", "Write", "Close", "CloseAndUpdate",
+                 "GetPosition", "SetPosition", "AddCertificate", "RemoveCertificate")
+}
+
 # Methods only the certificate manager may call.
 PUSH_METHODS = frozenset(
-    ua.NodeId(i) for i in (CREATE_SIGNING_REQUEST, UPDATE_CERTIFICATE, APPLY_CHANGES, GET_REJECTED_LIST)
+    ua.NodeId(i) for i in (CREATE_SIGNING_REQUEST, UPDATE_CERTIFICATE, APPLY_CHANGES, GET_REJECTED_LIST,
+                           *TRUST_METHODS.values())
 )
+
+# TrustListMasks (OPC 10000-12 §7.8.2.8)
+TRUSTED_CERTIFICATES, TRUSTED_CRLS, ISSUER_CERTIFICATES, ISSUER_CRLS = 1, 2, 4, 8
+ALL_LISTS = 15
+
+# OpenFileMode bits (OPC 10000-20)
+MODE_READ, MODE_WRITE, MODE_ERASE = 1, 2, 4
 
 DEFAULT_GROUP = ua.NodeId(ua.ObjectIds.ServerConfiguration_CertificateGroups_DefaultApplicationGroup)
 CERTIFICATE_TYPES = {
@@ -59,6 +84,7 @@ CERTIFICATE_TYPES = {
     ua.NodeId(ua.ObjectIds.RsaSha256ApplicationCertificateType),
 }
 
+TRUST_LIST_FILE = "trustlist.der"
 CERTIFICATE_FILE = "server_cert.pem"
 KEY_FILE = "server_key.pem"
 ISSUERS_FILE = "issuers.pem"
@@ -162,6 +188,115 @@ def pushed_credentials(store: Optional[str], application_uri: str) -> Optional[T
     return str(certificate_file), str(key_file)
 
 
+def encode_trust_list(trust: ua.TrustListDataType) -> bytes:
+    return binary.struct_to_binary(trust)
+
+
+def decode_trust_list(data: bytes) -> ua.TrustListDataType:
+    return binary.struct_from_binary(ua.TrustListDataType, Buffer(data))
+
+
+def trust_list_of(certificates_pem: List[str], crls: List[bytes]) -> ua.TrustListDataType:
+    """A complete trust list from PEM certificates and DER CRLs."""
+    trust = ua.TrustListDataType()
+    trust.SpecifiedLists = ALL_LISTS
+    trust.TrustedCertificates = [
+        x509.load_pem_x509_certificate(p.encode() if isinstance(p, str) else p).public_bytes(serialization.Encoding.DER)
+        for p in certificates_pem
+    ]
+    trust.TrustedCrls = list(crls)
+    trust.IssuerCertificates = []
+    trust.IssuerCrls = []
+    return trust
+
+
+def masked(trust: ua.TrustListDataType, masks: int) -> ua.TrustListDataType:
+    """The lists of ``trust`` that ``masks`` selects, the others empty."""
+    out = copy.copy(trust)
+    out.SpecifiedLists = masks & ALL_LISTS
+    for bit, field in ((TRUSTED_CERTIFICATES, "TrustedCertificates"), (TRUSTED_CRLS, "TrustedCrls"),
+                       (ISSUER_CERTIFICATES, "IssuerCertificates"), (ISSUER_CRLS, "IssuerCrls")):
+        setattr(out, field, list(getattr(trust, field) or []) if masks & bit else [])
+    return out
+
+
+def merged(current: ua.TrustListDataType, update: ua.TrustListDataType) -> ua.TrustListDataType:
+    """``current`` with the lists ``update`` specifies replaced (§7.8.2.4)."""
+    out = masked(current, ALL_LISTS)
+    for bit, field in ((TRUSTED_CERTIFICATES, "TrustedCertificates"), (TRUSTED_CRLS, "TrustedCrls"),
+                       (ISSUER_CERTIFICATES, "IssuerCertificates"), (ISSUER_CRLS, "IssuerCrls")):
+        if (update.SpecifiedLists or 0) & bit:
+            setattr(out, field, list(getattr(update, field) or []))
+    return out
+
+
+def check_trust_list(trust: ua.TrustListDataType) -> None:
+    """Every certificate and CRL must be readable (DER)."""
+    try:
+        for der in (trust.TrustedCertificates or []) + (trust.IssuerCertificates or []):
+            list(x509.load_der_x509_certificate(der).extensions)
+        for der in (trust.TrustedCrls or []) + (trust.IssuerCrls or []):
+            x509.load_der_x509_crl(der)
+    except ValueError as error:
+        raise PushError(ua.StatusCodes.BadCertificateInvalid, f"trust list entry cannot be read ({error})") from error
+
+
+def pushed_trust_list(store: Optional[str]) -> Optional[ua.TrustListDataType]:
+    """The trust list a certificate manager pushed and applied, or None."""
+    if not store or not (Path(store) / TRUST_LIST_FILE).exists():
+        return None
+
+    try:
+        trust = decode_trust_list((Path(store) / TRUST_LIST_FILE).read_bytes())
+        check_trust_list(trust)
+        return trust
+    except (ValueError, PushError, Exception) as error:  # noqa: BLE001 - an unreadable file is not used
+        log_warn(f"OPC UA: the pushed trust list in {store} cannot be read ({error}); the program's is used")
+        return None
+
+
+def apply_pushed_trust_list(config) -> None:
+    """Make the trust list a manager pushed the one the server uses: the trusted
+    certificates replace the program's (an entry the program also lists keeps its
+    id, so a certificate user stays), the issuer certificates join them and the
+    CRLs go to ``security.trusted_crls`` (DER). The program's list is kept aside
+    and used again when no pushed list is there."""
+    security = config.security
+
+    if not hasattr(security, "program_trusted_certificates"):
+        security.program_trusted_certificates = list(security.trusted_client_certificates or [])
+
+    trust = pushed_trust_list(getattr(security, "certificate_store", None))
+
+    if trust is None:
+        security.trusted_client_certificates = list(security.program_trusted_certificates)
+        security.trusted_crls = []
+        return
+
+    def fingerprint(pem_or_der) -> bytes:
+        if isinstance(pem_or_der, str):
+            pem_or_der = x509.load_pem_x509_certificate(pem_or_der.encode()).public_bytes(serialization.Encoding.DER)
+        return hashlib.sha256(pem_or_der).digest()
+
+    ids = {}
+    for entry in security.program_trusted_certificates:
+        try:
+            ids[fingerprint(entry["pem"])] = entry["id"]
+        except (ValueError, KeyError):
+            continue
+
+    entries = []
+    for i, der in enumerate((trust.TrustedCertificates or []) + (trust.IssuerCertificates or [])):
+        pem = x509.load_der_x509_certificate(der).public_bytes(serialization.Encoding.PEM).decode()
+        entries.append({"id": ids.get(fingerprint(der), f"pushed-{i}"), "pem": pem})
+
+    security.trusted_client_certificates = entries
+    security.trusted_crls = list(trust.TrustedCrls or []) + list(trust.IssuerCrls or [])
+
+    log_info(f"OPC UA: trust list pushed by the certificate manager: {len(entries)} certificate(s), "
+             f"{len(security.trusted_crls)} CRL(s)")
+
+
 def write_private(path: Path, data: bytes, mode: int = 0o600) -> None:
     """Replace ``path`` atomically, readable only by the runtime."""
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
@@ -187,6 +322,7 @@ class CertificatePush:
         current: Callable[[], Optional[Tuple[str, str]]],
         on_apply: Callable[[], None],
         hosts: Optional[List[str]] = None,
+        current_trust: Optional[Callable[[], ua.TrustListDataType]] = None,
     ):
         self.application_uri = application_uri
         # names the clients reach the server by, added to the signing request
@@ -197,6 +333,12 @@ class CertificatePush:
         self.on_apply = on_apply
         self._pending_key = None
         self._update: Optional[Tuple[bytes, bytes, List[bytes]]] = None
+        # the trust list the server uses now, and a new one waiting for ApplyChanges
+        self.current_trust = current_trust or (lambda: trust_list_of([], []))
+        self._trust_update: Optional[ua.TrustListDataType] = None
+        # open TrustList file handles: handle -> {"mode", "data", "position"}
+        self._files = {}
+        self._next_handle = 1
 
     async def link(self, server) -> None:
         for method, call in (
@@ -204,6 +346,16 @@ class CertificatePush:
             (UPDATE_CERTIFICATE, self.update_certificate),
             (APPLY_CHANGES, self.apply_changes),
             (GET_REJECTED_LIST, self.get_rejected_list),
+            (TRUST_METHODS["Open"], self.trust_open),
+            (TRUST_METHODS["OpenWithMasks"], self.trust_open_with_masks),
+            (TRUST_METHODS["Read"], self.trust_read),
+            (TRUST_METHODS["Write"], self.trust_write),
+            (TRUST_METHODS["Close"], self.trust_close),
+            (TRUST_METHODS["CloseAndUpdate"], self.trust_close_and_update),
+            (TRUST_METHODS["GetPosition"], self.trust_get_position),
+            (TRUST_METHODS["SetPosition"], self.trust_set_position),
+            (TRUST_METHODS["AddCertificate"], self.trust_add_certificate),
+            (TRUST_METHODS["RemoveCertificate"], self.trust_remove_certificate),
         ):
             server.link_method(server.get_node(ua.NodeId(method)), call)
 
@@ -238,6 +390,135 @@ class CertificatePush:
 
     async def get_rejected_list(self, parent):
         return [ua.Variant([], ua.VariantType.ByteString)]
+
+    # -- the TrustList file (OPC 10000-12 §7.8.2, FileType of OPC 10000-20) --
+
+    def _trust_now(self) -> ua.TrustListDataType:
+        """What a reader sees: the pending list when there is one."""
+        return self._trust_update or self.current_trust()
+
+    def _file(self, handle) -> dict:
+        entry = self._files.get(handle.Value)
+        if entry is None:
+            raise PushError(ua.StatusCodes.BadInvalidArgument, f"no open trust list file {handle.Value}")
+        return entry
+
+    def _open(self, mode: int, masks: int) -> List[ua.Variant]:
+        if self.store is None:
+            raise PushError(ua.StatusCodes.BadNotSupported, "no certificate store configured (security.certificate_store)")
+
+        if mode == MODE_READ:
+            data = encode_trust_list(masked(self._trust_now(), masks))
+        elif mode == MODE_WRITE | MODE_ERASE:
+            if any(f["mode"] != MODE_READ for f in self._files.values()):
+                raise PushError(ua.StatusCodes.BadNotWritable, "the trust list is open for writing already")
+            data = b""
+        else:
+            raise PushError(ua.StatusCodes.BadInvalidArgument, f"open mode {mode} not supported (1: read, 6: write and erase)")
+
+        handle = self._next_handle
+        self._next_handle += 1
+        self._files[handle] = {"mode": mode, "data": data, "position": 0}
+
+        return [ua.Variant(handle, ua.VariantType.UInt32)]
+
+    async def trust_open(self, parent, mode):
+        return self._call(lambda: self._open(int(mode.Value), ALL_LISTS), "Open")
+
+    async def trust_open_with_masks(self, parent, masks):
+        return self._call(lambda: self._open(MODE_READ, int(masks.Value)), "OpenWithMasks")
+
+    async def trust_read(self, parent, handle, length):
+        def read():
+            entry = self._file(handle)
+            start = entry["position"]
+            chunk = entry["data"][start:start + max(int(length.Value), 0)]
+            entry["position"] = start + len(chunk)
+            return [ua.Variant(chunk, ua.VariantType.ByteString)]
+        return self._call(read, "Read")
+
+    async def trust_write(self, parent, handle, data):
+        def write():
+            entry = self._file(handle)
+            if entry["mode"] == MODE_READ:
+                raise PushError(ua.StatusCodes.BadInvalidState, "the trust list file is open for reading")
+            entry["data"] += data.Value or b""
+            entry["position"] = len(entry["data"])
+            return []
+        return self._call(write, "Write")
+
+    async def trust_get_position(self, parent, handle):
+        return self._call(lambda: [ua.Variant(self._file(handle)["position"], ua.VariantType.UInt64)], "GetPosition")
+
+    async def trust_set_position(self, parent, handle, position):
+        def set_position():
+            self._file(handle)["position"] = int(position.Value)
+            return []
+        return self._call(set_position, "SetPosition")
+
+    async def trust_close(self, parent, handle):
+        def close():
+            self._file(handle)
+            del self._files[handle.Value]
+            return []
+        return self._call(close, "Close")
+
+    async def trust_close_and_update(self, parent, handle):
+        def close_and_update():
+            entry = self._file(handle)
+            if entry["mode"] == MODE_READ:
+                raise PushError(ua.StatusCodes.BadInvalidState, "the trust list file is open for reading")
+            del self._files[handle.Value]
+            try:
+                update = decode_trust_list(entry["data"])
+            except Exception as error:  # noqa: BLE001 - whatever does not decode is refused
+                raise PushError(ua.StatusCodes.BadDecodingError, f"trust list cannot be decoded ({error})") from error
+            check_trust_list(update)
+            self._trust_update = merged(self._trust_now(), update)
+            log_info("OPC UA: new trust list accepted, waiting for ApplyChanges")
+            return [ua.Variant(True, ua.VariantType.Boolean)]
+        return self._call(close_and_update, "CloseAndUpdate")
+
+    async def trust_add_certificate(self, parent, certificate, is_trusted):
+        def add():
+            if self.store is None:
+                raise PushError(ua.StatusCodes.BadNotSupported, "no certificate store configured")
+            if self._files:
+                raise PushError(ua.StatusCodes.BadInvalidState, "the trust list file is open")
+            der = certificate.Value or b""
+            update = merged(self._trust_now(), ua.TrustListDataType(SpecifiedLists=0))
+            update.SpecifiedLists = ALL_LISTS
+            check_trust_list(ua.TrustListDataType(SpecifiedLists=1, TrustedCertificates=[der]))
+            field = "TrustedCertificates" if is_trusted.Value else "IssuerCertificates"
+            if der not in getattr(update, field):
+                getattr(update, field).append(der)
+            self._trust_update = update
+            return []
+        return self._call(add, "AddCertificate")
+
+    async def trust_remove_certificate(self, parent, thumbprint, is_trusted):
+        def remove():
+            if self.store is None:
+                raise PushError(ua.StatusCodes.BadNotSupported, "no certificate store configured")
+            if self._files:
+                raise PushError(ua.StatusCodes.BadInvalidState, "the trust list file is open")
+            wanted = (thumbprint.Value or "").replace(":", "").lower()
+            update = merged(self._trust_now(), ua.TrustListDataType(SpecifiedLists=0))
+            field = "TrustedCertificates" if is_trusted.Value else "IssuerCertificates"
+            kept = [der for der in getattr(update, field) if hashlib.sha1(der).hexdigest() != wanted]
+            if len(kept) == len(getattr(update, field)):
+                raise PushError(ua.StatusCodes.BadInvalidArgument, f"no certificate with thumbprint {wanted}")
+            setattr(update, field, kept)
+            self._trust_update = update
+            return []
+        return self._call(remove, "RemoveCertificate")
+
+    def _call(self, work, name):
+        try:
+            return work()
+        except PushError as error:
+            log_warn(f"OPC UA TrustList.{name} refused: {error}")
+            return ua.StatusCode(error.code)
 
     # -- the work ------------------------------------------------------------
 
@@ -347,19 +628,27 @@ class CertificatePush:
         if self.store is None:
             raise PushError(ua.StatusCodes.BadNotSupported, "no certificate store configured (security.certificate_store)")
 
-        if self._update is None:
-            raise PushError(ua.StatusCodes.BadNothingToDo, "no certificate update pending")
-
-        certificate_pem, key_pem, issuers_pem = self._update
+        if self._update is None and self._trust_update is None:
+            raise PushError(ua.StatusCodes.BadNothingToDo, "no certificate or trust list update pending")
 
         self.store.mkdir(parents=True, exist_ok=True)
         os.chmod(self.store, 0o700)
 
-        write_private(self.store / KEY_FILE, key_pem)
-        write_private(self.store / CERTIFICATE_FILE, certificate_pem, 0o644)
-        write_private(self.store / ISSUERS_FILE, issuers_pem, 0o644)
+        if self._trust_update is not None:
+            write_private(self.store / TRUST_LIST_FILE, encode_trust_list(self._trust_update), 0o644)
+            self._trust_update = None
+            log_info(f"OPC UA: new trust list stored in {self.store}")
 
-        self._update = None
-        self._pending_key = None
+        if self._update is not None:
+            certificate_pem, key_pem, issuers_pem = self._update
 
-        log_info(f"OPC UA: new certificate stored in {self.store}; restarting the server with it")
+            write_private(self.store / KEY_FILE, key_pem)
+            write_private(self.store / CERTIFICATE_FILE, certificate_pem, 0o644)
+            write_private(self.store / ISSUERS_FILE, issuers_pem, 0o644)
+
+            self._update = None
+            self._pending_key = None
+
+            log_info(f"OPC UA: new certificate stored in {self.store}")
+
+        log_info("OPC UA: restarting the server with the pushed changes")

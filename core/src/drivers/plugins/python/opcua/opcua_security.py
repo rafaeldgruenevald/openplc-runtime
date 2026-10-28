@@ -1317,7 +1317,14 @@ class OpcuaSecurityManager:
             if cert_files:
                 # A TrustStore location is a directory of certificates, not a
                 # file: handed the files it loaded nothing and trusted nobody.
-                trust_store = TrustStore([Path(temp_dir)], [])
+                # CRLs of a pushed trust list (DER), checked with the REVOKED option
+                crl_dir = Path(temp_dir) / "crl"
+                crl_dir.mkdir()
+                crls = getattr(getattr(self.config, "security", None), "trusted_crls", None) or []
+                for i, crl in enumerate(crls):
+                    (crl_dir / f"crl_{i}.crl").write_bytes(crl)
+
+                trust_store = TrustStore([Path(temp_dir)], [crl_dir] if crls else [])
                 await trust_store.load()
                 log_debug(f"TrustStore created with {len(cert_files)} certificates")
                 return trust_store
