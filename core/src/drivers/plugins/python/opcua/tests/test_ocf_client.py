@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from asyncua import Server, ua
+from cryptography import x509
 from asyncua.ua import ua_binary as binary
 
 OPCUA_DIR = Path(__file__).resolve().parents[1]
@@ -377,3 +378,134 @@ def test_the_stale_time_defaults_to_a_few_periods():
     client = ocf_client.OcfClient(config(period_ms=500), None, "urn:me", "c", "k")
 
     assert client.stale_s == 2.5
+
+
+# -- the certificate of a server is checked before any session ---------------
+
+def self_signed(ca_flag=0xFF):
+    """A DER certificate with a critical BasicConstraints CA:TRUE, pathlen 0; ca_flag
+    0x01 encodes the BOOLEAN outside DER, as the NX3008 firmware does."""
+    import datetime
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "peer")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    der = (
+        x509.CertificateBuilder()
+        .subject_name(name).issuer_name(name).public_key(key.public_key())
+        .serial_number(1).not_valid_before(now).not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.DER)
+    )
+    return der.replace(b"\x30\x06\x01\x01\xff\x02\x01\x00", b"\x30\x06\x01\x01" + bytes([ca_flag]) + b"\x02\x01\x00")
+
+
+def endpoint(certificate, policy=ocf_client.SECURE_POLICY_URI, mode=ua.MessageSecurityMode.SignAndEncrypt):
+    description = ua.EndpointDescription()
+    description.SecurityPolicyUri = policy
+    description.SecurityMode = mode
+    description.ServerCertificate = certificate
+    description.Server = ua.ApplicationDescription(ApplicationUri="urn:peer")
+    return description
+
+
+class EndpointsOnly:
+    """A server reached only for GetEndpoints; a session would be a test failure."""
+
+    endpoints = []
+
+    def __init__(self, url, timeout=None):
+        self.url = url
+
+    async def connect_and_get_server_endpoints(self):
+        return EndpointsOnly.endpoints
+
+
+class Validator:
+    def __init__(self, trusted):
+        self.trusted = trusted
+        self.seen = []
+
+    async def __call__(self, certificate, application):
+        self.seen.append(application.ApplicationUri)
+        if not self.trusted:
+            raise ua.UaStatusCodeError(ua.StatusCodes.BadCertificateUntrusted)
+
+
+def checker(monkeypatch, endpoints, validator):
+    monkeypatch.setattr(ocf_client, "Client", EndpointsOnly)
+    EndpointsOnly.endpoints = endpoints
+    config = SimpleNamespace(period_ms=100, stale_ms=None, inputs=[], gds_url="opc.tcp://gds")
+    return ocf_client.OcfClient(config, None, "urn:me", "cert.pem", "key.pem", validator=validator)
+
+
+def check(client, url="opc.tcp://peer:4840"):
+    return asyncio.run(client._check_server(url))
+
+
+def test_a_certificate_that_cannot_be_read_is_refused_without_a_session(monkeypatch):
+    client = checker(monkeypatch, [endpoint(self_signed(ca_flag=0x01))], Validator(True))
+
+    try:
+        check(client)
+    except ocf_client.PeerRefused as error:
+        assert "opc.tcp://peer:4840" in str(error)
+    else:
+        raise AssertionError("an unreadable certificate was accepted")
+
+
+def test_a_certificate_the_trust_list_does_not_vouch_for_is_refused(monkeypatch):
+    validator = Validator(False)
+    client = checker(monkeypatch, [endpoint(self_signed())], validator)
+
+    try:
+        check(client)
+    except ocf_client.PeerRefused as error:
+        assert "not trusted" in str(error)
+    else:
+        raise AssertionError("an untrusted certificate was accepted")
+
+    assert validator.seen == ["urn:peer"]
+
+
+def test_a_trusted_certificate_lets_the_session_go_on(monkeypatch):
+    validator = Validator(True)
+    insecure = endpoint(self_signed(), policy="http://opcfoundation.org/UA/SecurityPolicy#None",
+                        mode=ua.MessageSecurityMode.None_)
+
+    check(checker(monkeypatch, [insecure, endpoint(self_signed())], validator))
+
+    assert validator.seen == ["urn:peer"]
+
+
+def test_a_server_without_a_secure_endpoint_is_refused(monkeypatch):
+    insecure = endpoint(self_signed(), policy="http://opcfoundation.org/UA/SecurityPolicy#None",
+                        mode=ua.MessageSecurityMode.None_)
+
+    try:
+        check(checker(monkeypatch, [insecure], Validator(True)))
+    except ocf_client.PeerRefused as error:
+        assert "no Basic256Sha256" in str(error)
+    else:
+        raise AssertionError("a server without a secure endpoint was accepted")
+
+
+def test_the_leaf_is_taken_from_a_certificate_with_its_chain():
+    leaf = self_signed()
+
+    assert ocf_client.first_certificate(leaf + self_signed()) == leaf
+    assert ocf_client.first_certificate(leaf) == leaf
+
+
+def test_sessions_ask_for_a_short_timeout():
+    config = SimpleNamespace(period_ms=100, stale_ms=None, inputs=[], secure=False)
+    client = ocf_client.OcfClient(config, None, "urn:me", "cert.pem", "key.pem")
+
+    session = asyncio.run(client._peer_session("opc.tcp://peer:4840"))
+
+    assert session.session_timeout == ocf_client.SESSION_TIMEOUT_MS

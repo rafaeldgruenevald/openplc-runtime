@@ -32,6 +32,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from asyncua import Client, ua
 from asyncua.common.utils import Buffer
+from cryptography import x509
 from asyncua.ua import ua_binary as binary
 
 try:
@@ -58,6 +59,12 @@ STALE_MIN_MS = 1000
 # A secure session (two handshakes) needs more than one stale period.
 CONNECT_MIN_S = 5.0
 
+# Session timeout asked of every server: a session left behind (a client that
+# gives up mid-connect) holds one of the server's slots at most this long.
+SESSION_TIMEOUT_MS = 60000
+
+SECURE_POLICY_URI = "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256"
+
 
 def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
     """(ApplicationUri, DiscoveryUrls) of an ApplicationRecordDataType in its
@@ -73,6 +80,18 @@ def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
     urls = binary.unpack_uatype_array(ua.VariantType.String, data) or []
 
     return uri, list(urls)
+
+
+class PeerRefused(Exception):
+    """The certificate a server announces cannot be read or is not trusted."""
+
+
+def first_certificate(der: bytes) -> bytes:
+    """The leaf of a server certificate that may come with its chain appended."""
+    if len(der) > 4 and der[0] == 0x30 and der[1] == 0x82:
+        return der[: int.from_bytes(der[2:4], "big") + 4]
+
+    return der
 
 
 def decode_alias_verbose(body: bytes) -> Tuple[str, List[Any], List[str]]:
@@ -270,6 +289,11 @@ class OcfClient:
 
                 if state.get("connected"):
                     log_warn(f"OCF input {item.alias}: lost the source ({error}); resolving it again")
+                elif isinstance(error, PeerRefused):
+                    # once per reason: the client keeps retrying with backoff
+                    if state.get("refused") != str(error):
+                        log_warn(f"OCF input {item.alias}: {error}")
+                    state["refused"] = str(error)
                 else:
                     log_debug(f"OCF input {item.alias}: not available yet ({error})")
 
@@ -321,8 +345,47 @@ class OcfClient:
 
     # -- the GDS ------------------------------------------------------------
 
+    async def _check_server(self, url: str) -> None:
+        """Validate the certificate the server announces before any session: asyncua
+        validates it only after CreateSession, and a server refused then keeps that
+        session until it times out (a controller with few sessions runs out of them)."""
+        if self.validator is None:
+            return
+
+        endpoints = await asyncio.wait_for(
+            Client(url, timeout=10).connect_and_get_server_endpoints(), self.connect_s
+        )
+
+        endpoint = next(
+            (
+                e for e in endpoints
+                if e.SecurityPolicyUri == SECURE_POLICY_URI
+                and e.SecurityMode == ua.MessageSecurityMode.SignAndEncrypt
+            ),
+            None,
+        )
+
+        if endpoint is None:
+            raise PeerRefused(f"{url} offers no Basic256Sha256 SignAndEncrypt endpoint")
+
+        try:
+            certificate = x509.load_der_x509_certificate(first_certificate(endpoint.ServerCertificate))
+            # extensions are parsed on first access: a malformed one must fail here
+            list(certificate.extensions)
+        except ValueError as error:
+            raise PeerRefused(f"the certificate of {url} cannot be read ({error})") from error
+
+        try:
+            await self.validator(certificate, endpoint.Server)
+        except Exception as error:
+            raise PeerRefused(f"the certificate of {url} is not trusted ({error})") from error
+
     async def _secure_client(self, url: str) -> Client:
+        await self._check_server(url)
+
         client = Client(url, timeout=10)
+
+        client.session_timeout = SESSION_TIMEOUT_MS
 
         client.application_uri = self.application_uri
 
@@ -342,7 +405,11 @@ class OcfClient:
         if getattr(self.config, "secure", False):
             return await self._secure_client(url)
 
-        return Client(url, timeout=10)
+        client = Client(url, timeout=10)
+
+        client.session_timeout = SESSION_TIMEOUT_MS
+
+        return client
 
     async def _resolve(self, alias: str) -> Source:
         async with await self._gds_session() as gds:
