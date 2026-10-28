@@ -319,11 +319,11 @@ def _run_server_thread() -> None:
             while True:
                 await _server_manager.run()
 
-                # ApplyChanges of a pushed certificate: a new server loads it
+                # ApplyChanges of a pushed certificate or trust list: a new server loads it
                 if _stop_event.is_set() or not getattr(_server_manager, "restart_requested", False):
                     break
 
-                log_info("OPC-UA server restarting with the new certificate")
+                log_info("OPC-UA server restarting with the pushed certificate or trust list")
                 _server_manager = OpcuaServerManager(_config, _buffer_accessor, os.path.dirname(__file__))
         except asyncio.CancelledError:
             pass
