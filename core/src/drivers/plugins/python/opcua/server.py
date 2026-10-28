@@ -154,6 +154,7 @@ class OpcuaServerManager:
         # Push certificate management; a new certificate needs a new server
         self.certificate_push: Optional[CertificatePush] = None
         self.restart_requested = False
+        self.start_failed = False
 
         # The listening sockets are open: they must be closed before a new server binds
         self._server_started = False
@@ -210,6 +211,7 @@ class OpcuaServerManager:
             # Start server
             if not await self._start_server():
                 log_error("Failed to start server")
+                self.start_failed = True
                 return
 
             # The OCF client runs next to the server
@@ -538,6 +540,25 @@ class OpcuaServerManager:
         self.ocf_client = None
         self._ocf_task = None
 
+    def _force_close(self) -> None:
+        """Close the listening socket and abort the connections of a server whose
+        stop() is still waiting on its clients: a new server must be able to bind
+        the port (a restart after ApplyChanges), and connections nobody reads
+        pile up otherwise."""
+        bserver = getattr(self.server, "bserver", None)
+        listener = getattr(bserver, "_server", None)
+
+        if listener is not None:
+            listener.close()
+
+        iserver = getattr(self.server, "iserver", None)
+
+        for transport in list(getattr(iserver, "asyncio_transports", None) or []):
+            try:
+                transport.abort()
+            except Exception as e:  # noqa: BLE001 - a transport already gone
+                log_debug(f"aborting a connection: {e}")
+
     async def _cleanup(self) -> None:
         """
         Clean up resources.
@@ -561,7 +582,8 @@ class OpcuaServerManager:
                     log_info("OPC-UA server stopped")
                 except asyncio.TimeoutError:
                     log_warn("OPC-UA server.stop() did not finish in 1.5s; "
-                             "proceeding with cleanup anyway")
+                             "closing its socket and connections")
+                    self._force_close()
 
             self.running = False
             self.server = None
