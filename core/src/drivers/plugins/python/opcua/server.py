@@ -151,6 +151,9 @@ class OpcuaServerManager:
         self.certificate_push: Optional[CertificatePush] = None
         self.restart_requested = False
 
+        # The listening sockets are open: they must be closed before a new server binds
+        self._server_started = False
+
     async def run(self) -> None:
         """
         Initialize, start, and run the server.
@@ -419,6 +422,7 @@ class OpcuaServerManager:
 
             await self.server.start()
             self.running = True
+            self._server_started = True
 
             log_info(f"OPC-UA server started on {self.config.server.endpoint_url}")
 
@@ -541,7 +545,9 @@ class OpcuaServerManager:
         try:
             await self._stop_ocf_client()
 
-            if self.server and self.running:
+            # running is already False when stop() or a restart ended the loop:
+            # what matters is whether the server bound its sockets
+            if self.server and self._server_started:
                 try:
                     await asyncio.wait_for(self.server.stop(), timeout=1.5)
                     log_info("OPC-UA server stopped")
