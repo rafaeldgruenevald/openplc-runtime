@@ -270,3 +270,25 @@ def test_the_methods_answer_over_a_session(tmp_path, monkeypatch):
     assert required is True
     assert bench.restarts == 1
     assert (bench.store / "server_cert.pem").read_bytes() == pem(certificate)
+
+
+def test_a_pushed_certificate_replaces_the_one_of_the_strategy(tmp_path):
+    from opcua_security import OpcuaSecurityManager
+
+    store = tmp_path / "store"
+    store.mkdir()
+    private = key()
+    (store / "server_key.pem").write_bytes(key_pem(private))
+    (store / "server_cert.pem").write_bytes(pem(issue(private.public_key())))
+
+    config = SimpleNamespace(
+        server=SimpleNamespace(application_uri=URI, security_profiles=[]),
+        security=SimpleNamespace(server_certificate_strategy="auto_self_signed",
+                                 server_certificate_custom=None, server_private_key_custom=None,
+                                 trusted_client_certificates=[], peer_role=None,
+                                 certificate_store=str(store)),
+    )
+
+    manager = OpcuaSecurityManager(config, str(tmp_path))
+
+    assert manager.credential_files() == (str(store / "server_cert.pem"), str(store / "server_key.pem"))
