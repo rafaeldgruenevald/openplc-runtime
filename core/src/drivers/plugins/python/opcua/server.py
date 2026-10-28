@@ -65,11 +65,11 @@ from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
 from asyncua.crypto.validator import CertificateValidator
 
 try:
-    from .certificate_push import CertificatePush
+    from .certificate_push import CertificatePush, apply_pushed_trust_list, trust_list_of
     from .ocf_client import OcfClient
     from .opcua_security import PEER_TRUST_OPTIONS
 except ImportError:
-    from certificate_push import CertificatePush
+    from certificate_push import CertificatePush, apply_pushed_trust_list, trust_list_of
     from ocf_client import OcfClient
     from opcua_security import PEER_TRUST_OPTIONS
 
@@ -107,6 +107,10 @@ class OpcuaServerManager:
         self.config = config
         self.buffer_accessor = buffer_accessor
         self.plugin_dir = plugin_dir
+
+        # A trust list the certificate manager pushed replaces the program's
+        # (before the security and user managers read it)
+        apply_pushed_trust_list(self.config)
 
         # Server state
         self.server: Optional[Server] = None
@@ -230,6 +234,10 @@ class OpcuaServerManager:
             self.security_manager.credential_files,
             self._restart_for_new_certificate,
             getattr(self.config.security, "certificate_hosts", None),
+            lambda: trust_list_of(
+                [entry["pem"] for entry in self.config.security.trusted_client_certificates],
+                getattr(self.config.security, "trusted_crls", None) or [],
+            ),
         )
 
         await self.certificate_push.link(self.server)

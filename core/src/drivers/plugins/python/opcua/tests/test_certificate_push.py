@@ -302,3 +302,175 @@ def test_the_hosts_the_clients_use_go_in_the_signing_request(tmp_path):
 
     assert sorted(names.get_values_for_type(x509.DNSName)) == ["dcn01.local", "host.docker.internal"]
     assert [str(a) for a in names.get_values_for_type(x509.IPAddress)] == ["192.168.18.191"]
+
+
+# -- the trust list by push -------------------------------------------------
+
+def crl():
+    return (
+        x509.CertificateRevocationListBuilder().issuer_name(CA.subject)
+        .last_update(NOW).next_update(NOW + datetime.timedelta(days=7))
+        .sign(CA_KEY, hashes.SHA256())
+        .public_bytes(serialization.Encoding.DER)
+    )
+
+
+PEER = issue(key().public_key(), uri="urn:peer")
+
+
+def trust_push(tmp_path, monkeypatch, current=None):
+    monkeypatch.setattr(certificate_push, "RESTART_DELAY_S", 0)
+    bench = Push(tmp_path)
+    initial = current or certificate_push.trust_list_of([pem(CA).decode()], [])
+    bench.push.current_trust = lambda: initial
+    return bench
+
+
+def call(coroutine):
+    out = run(coroutine)
+    return out if isinstance(out, ua.StatusCode) else [x.Value for x in out]
+
+
+def write_trust_list(push, trust, chunk=100):
+    [handle] = call(push.trust_open(None, v(6, ua.VariantType.Byte)))
+    data = certificate_push.encode_trust_list(trust)
+    for i in range(0, len(data), chunk):
+        call(push.trust_write(None, v(handle, ua.VariantType.UInt32), v(data[i:i + chunk], ua.VariantType.ByteString)))
+    return call(push.trust_close_and_update(None, v(handle, ua.VariantType.UInt32)))
+
+
+def read_trust_list(push, masks=None):
+    opened = (push.trust_open(None, v(1, ua.VariantType.Byte)) if masks is None
+              else push.trust_open_with_masks(None, v(masks, ua.VariantType.UInt32)))
+    [handle] = call(opened)
+    data = b""
+    while True:
+        [chunk] = call(push.trust_read(None, v(handle, ua.VariantType.UInt32), v(50, ua.VariantType.Int32)))
+        if not chunk:
+            break
+        data += chunk
+    call(push.trust_close(None, v(handle, ua.VariantType.UInt32)))
+    return certificate_push.decode_trust_list(data)
+
+
+def program_config(store, trusted):
+    return SimpleNamespace(
+        server=SimpleNamespace(application_uri=URI),
+        security=SimpleNamespace(certificate_store=str(store), trusted_client_certificates=trusted),
+    )
+
+
+def test_a_trust_list_written_and_applied_replaces_the_programs(tmp_path, monkeypatch):
+    bench = trust_push(tmp_path, monkeypatch)
+    manager = pem(issue(key().public_key(), uri="urn:manager")).decode()
+    trust = certificate_push.trust_list_of([pem(CA).decode(), pem(PEER).decode(), manager], [crl()])
+
+    assert write_trust_list(bench.push, trust) == [True]
+
+    async def apply():
+        result = await bench.push.apply_changes(None)
+        await asyncio.sleep(0.05)
+        return result
+
+    assert run(apply()) == [] and bench.restarts == 1
+
+    config = program_config(bench.store, [{"id": "certificate-manager", "pem": manager}, {"id": "old", "pem": pem(CA).decode()}])
+    certificate_push.apply_pushed_trust_list(config)
+
+    ids = [e["id"] for e in config.security.trusted_client_certificates]
+    assert ids == ["old", "pushed-1", "certificate-manager"]
+    assert config.security.trusted_crls == [crl()] or len(config.security.trusted_crls) == 1
+
+    # without the pushed file the program's list comes back
+    (bench.store / "trustlist.der").unlink()
+    certificate_push.apply_pushed_trust_list(config)
+    assert [e["id"] for e in config.security.trusted_client_certificates] == ["certificate-manager", "old"]
+
+
+def test_the_trust_list_is_read_whole_or_by_masks(tmp_path, monkeypatch):
+    bench = trust_push(tmp_path, monkeypatch, certificate_push.trust_list_of([pem(CA).decode()], [crl()]))
+
+    whole = read_trust_list(bench.push)
+    assert len(whole.TrustedCertificates) == 1 and len(whole.TrustedCrls) == 1
+
+    crls_only = read_trust_list(bench.push, masks=certificate_push.TRUSTED_CRLS)
+    assert crls_only.SpecifiedLists == certificate_push.TRUSTED_CRLS
+    assert crls_only.TrustedCertificates == [] and len(crls_only.TrustedCrls) == 1
+
+
+def test_a_partial_update_keeps_the_lists_it_does_not_specify(tmp_path, monkeypatch):
+    bench = trust_push(tmp_path, monkeypatch)
+    only_crls = ua.TrustListDataType(SpecifiedLists=certificate_push.TRUSTED_CRLS, TrustedCrls=[crl()])
+
+    assert write_trust_list(bench.push, only_crls) == [True]
+
+    after = read_trust_list(bench.push)
+    assert len(after.TrustedCertificates) == 1 and len(after.TrustedCrls) == 1
+
+
+def test_an_unreadable_trust_list_is_refused(tmp_path, monkeypatch):
+    bench = trust_push(tmp_path, monkeypatch)
+
+    [handle] = call(bench.push.trust_open(None, v(6, ua.VariantType.Byte)))
+    call(bench.push.trust_write(None, v(handle, ua.VariantType.UInt32), v(b"\x01", ua.VariantType.ByteString)))
+    assert call(bench.push.trust_close_and_update(None, v(handle, ua.VariantType.UInt32))) == ua.StatusCode(
+        ua.StatusCodes.BadDecodingError)
+
+    broken = ua.TrustListDataType(SpecifiedLists=1, TrustedCertificates=[b"not a certificate"])
+    assert write_trust_list(bench.push, broken) == ua.StatusCode(ua.StatusCodes.BadCertificateInvalid)
+
+
+def test_one_certificate_is_added_or_removed_by_thumbprint(tmp_path, monkeypatch):
+    import hashlib
+
+    bench = trust_push(tmp_path, monkeypatch)
+
+    call(bench.push.trust_add_certificate(None, v(der(PEER), ua.VariantType.ByteString), v(True, ua.VariantType.Boolean)))
+    assert len(read_trust_list(bench.push).TrustedCertificates) == 2
+
+    thumbprint = hashlib.sha1(der(PEER)).hexdigest().upper()
+    call(bench.push.trust_remove_certificate(None, v(thumbprint, ua.VariantType.String), v(True, ua.VariantType.Boolean)))
+    assert read_trust_list(bench.push).TrustedCertificates == [der(CA)]
+
+    assert call(bench.push.trust_remove_certificate(None, v("00", ua.VariantType.String), v(True, ua.VariantType.Boolean))) == \
+        ua.StatusCode(ua.StatusCodes.BadInvalidArgument)
+
+
+def test_only_an_administrator_may_touch_the_trust_list():
+    from opcua_security import OpenPLCRoleRuleset
+
+    body = SimpleNamespace(Parameters=SimpleNamespace(
+        MethodsToCall=[SimpleNamespace(MethodId=ua.NodeId(certificate_push.TRUST_METHODS["Read"]))]))
+    call_type = ua.NodeId(ua.ObjectIds.CallRequest_Encoding_DefaultBinary)
+
+    assert OpenPLCRoleRuleset().check_validity(SimpleNamespace(role=UserRole.User), call_type, body) is False
+
+
+def test_the_trust_list_methods_answer_over_a_session(tmp_path, monkeypatch):
+    bench = trust_push(tmp_path, monkeypatch)
+    trust = certificate_push.trust_list_of([pem(CA).decode(), pem(PEER).decode()], [crl()])
+    data = certificate_push.encode_trust_list(trust)
+
+    async def round_trip():
+        port = free_port()
+        server = Server()
+        await server.init()
+        server.set_endpoint(f"opc.tcp://127.0.0.1:{port}/")
+        await bench.push.link(server)
+        async with server:
+            async with Client(f"opc.tcp://127.0.0.1:{port}/") as client:
+                trust_list = client.get_node(ua.NodeId(certificate_push.TRUST_LIST))
+                m = lambda name: ua.NodeId(certificate_push.TRUST_METHODS[name])
+                handle = await trust_list.call_method(m("Open"), ua.Variant(6, ua.VariantType.Byte))
+                await trust_list.call_method(m("Write"), ua.Variant(handle, ua.VariantType.UInt32),
+                                             ua.Variant(data, ua.VariantType.ByteString))
+                required = await trust_list.call_method(m("CloseAndUpdate"), ua.Variant(handle, ua.VariantType.UInt32))
+                configuration = client.get_node(ua.NodeId(ua.ObjectIds.ServerConfiguration))
+                await configuration.call_method(ua.NodeId(certificate_push.APPLY_CHANGES))
+                await asyncio.sleep(0.05)
+                return required
+
+    assert run(round_trip()) is True
+    assert bench.restarts == 1
+    stored = certificate_push.decode_trust_list((bench.store / "trustlist.der").read_bytes())
+    assert len(stored.TrustedCertificates) == 2 and len(stored.TrustedCrls) == 1
