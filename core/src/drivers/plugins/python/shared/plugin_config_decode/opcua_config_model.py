@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Autonomy®
 
 from typing import List, Dict, Any, Optional, Literal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 
@@ -171,6 +171,9 @@ class SecurityConfig:
     # Folder where a certificate manager's pushed certificate and key are kept
     # (OPC 10000-12 push, certificate_push.py); absent: push is not supported.
     certificate_store: Optional[str] = None
+    # Host names and addresses the clients reach the server by, for the signing
+    # request (a DCN behind NAT does not know them itself).
+    certificate_hosts: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SecurityConfig':
@@ -194,7 +197,8 @@ class SecurityConfig:
             server_private_key_custom=server_private_key_custom,
             trusted_client_certificates=trusted_client_certificates,
             peer_role=peer_role,
-            certificate_store=data.get("certificate_store") or None
+            certificate_store=data.get("certificate_store") or None,
+            certificate_hosts=[str(h) for h in data.get("certificate_hosts") or []]
         )
 
 @dataclass

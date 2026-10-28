@@ -226,6 +226,7 @@ class OpcuaServerManager:
             getattr(self.config.security, "certificate_store", None),
             self.security_manager.credential_files,
             self._restart_for_new_certificate,
+            getattr(self.config.security, "certificate_hosts", None),
         )
 
         await self.certificate_push.link(self.server)

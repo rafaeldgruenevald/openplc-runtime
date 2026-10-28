@@ -25,6 +25,7 @@ the trusted certificates still come with the program.
 
 import asyncio
 import datetime
+import ipaddress
 import os
 import tempfile
 from pathlib import Path
@@ -185,8 +186,11 @@ class CertificatePush:
         store: Optional[str],
         current: Callable[[], Optional[Tuple[str, str]]],
         on_apply: Callable[[], None],
+        hosts: Optional[List[str]] = None,
     ):
         self.application_uri = application_uri
+        # names the clients reach the server by, added to the signing request
+        self.hosts = list(hosts or [])
         self.store = Path(store) if store else None
         # (certificate, key) PEM files the server presents now
         self.current = current
@@ -284,6 +288,14 @@ class CertificatePush:
                 alternative = list(certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value)
             except x509.ExtensionNotFound:
                 pass
+
+        for host in self.hosts:
+            try:
+                entry = x509.IPAddress(ipaddress.ip_address(host))
+            except ValueError:
+                entry = x509.DNSName(host)
+            if entry not in alternative:
+                alternative.append(entry)
 
         self._pending_key = key
         self._update = None

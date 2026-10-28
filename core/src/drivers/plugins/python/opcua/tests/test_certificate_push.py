@@ -292,3 +292,13 @@ def test_a_pushed_certificate_replaces_the_one_of_the_strategy(tmp_path):
     manager = OpcuaSecurityManager(config, str(tmp_path))
 
     assert manager.credential_files() == (str(store / "server_cert.pem"), str(store / "server_key.pem"))
+
+
+def test_the_hosts_the_clients_use_go_in_the_signing_request(tmp_path):
+    bench = Push(tmp_path)
+    bench.push.hosts = ["host.docker.internal", "192.168.18.191", "dcn01.local"]
+
+    names = request(bench.push).extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+
+    assert sorted(names.get_values_for_type(x509.DNSName)) == ["dcn01.local", "host.docker.internal"]
+    assert [str(a) for a in names.get_values_for_type(x509.IPAddress)] == ["192.168.18.191"]
