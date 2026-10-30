@@ -86,6 +86,15 @@ def _build_structure(structure: str, values: Dict[str, float]) -> object:
     raise ValueError(f"Unsupported composite structure: {structure}")
 
 
+
+def scalar_variant(node: VariableNode, value: Any) -> ua.Variant:
+    """The Variant a scalar node is served with: its IEC value as the OPC UA
+    type of the datatype, or as a StatusCode for a status served as one."""
+    if node.opcua_type == "StatusCode":
+        return ua.Variant(ua.StatusCode(int(value) & 0xFFFFFFFF), ua.VariantType.StatusCode)
+    return ua.Variant(convert_value_for_opcua(node.datatype, value), map_plc_to_opcua_type(node.datatype))
+
+
 class SynchronizationManager:
     """Request-driven OPC-UA ↔ PLC value bridge (see module docstring)."""
 
@@ -337,7 +346,7 @@ class SynchronizationManager:
                     if v is None:
                         failed = True
                         v = self._get_default_value(datatype)
-                    variant = ua.Variant(convert_value_for_opcua(datatype, v), expected_type)
+                    variant = scalar_variant(node, v)
                 now = datetime.now(timezone.utc)
                 if not failed and node.status_address is not None:
                     status = self._signal_status(node)
@@ -533,9 +542,7 @@ class SynchronizationManager:
             self._push_dv_ids.discard(id(data_value))
 
     async def _push_scalar_node(self, node: VariableNode, value: Any) -> None:
-        opcua_value = convert_value_for_opcua(node.datatype, value)
-        expected_type = map_plc_to_opcua_type(node.datatype)
-        variant = ua.Variant(opcua_value, expected_type)
+        variant = scalar_variant(node, value)
         if node.status_address is None:
             await self._push_value(node, variant)
             return

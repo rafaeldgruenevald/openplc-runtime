@@ -25,6 +25,9 @@ class VariableNode:
     array_length: Optional[int] = None  # Length of array (for array nodes only)
     # (arr, elem) of a UDINT leaf holding the StatusCode the node is served with
     status_address: Optional[Tuple[int, int]] = None
+    # OPC UA type the value is served as when it is not the one of the IEC
+    # datatype: "StatusCode" for a UDINT served as a StatusCode
+    opcua_type: Optional[str] = None
 
 @dataclass
 class VariableMetadata:

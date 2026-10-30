@@ -112,3 +112,40 @@ def test_without_a_status_leaf_a_readable_node_is_good(monkeypatch):
     value = read(monkeypatch, {(0, 1): 4.5, (0, 2): ua.StatusCodes.BadNoCommunication}, None)
 
     assert value.StatusCode_.is_good()
+
+
+def status_binding(iec: str) -> Dict[str, object]:
+    data = binding(None)
+    data["id"] = "PT101.Status"
+    data["source"] = leaf(2, iec)
+    data["types"] = {"iec": iec, "opcUa": "StatusCode"}
+    return data
+
+
+def test_the_status_leaf_binds_to_a_status_code_node():
+    # the Status member of a signal (urn:opas:model:signals), for servers that
+    # cannot set the StatusCode of the value
+    parsed = config.SemanticBinding.from_dict(status_binding("UDINT"))
+
+    assert parsed.types.opcua == "StatusCode"
+
+
+def test_only_a_status_holding_leaf_binds_to_a_status_code_node():
+    with pytest.raises(ValueError, match="requires OPC UA type Float"):
+        config.SemanticBinding.from_dict(status_binding("REAL"))
+
+
+def test_a_status_code_node_is_served_as_a_status_code(monkeypatch):
+    monkeypatch.setattr(synchronization, "debug_read_value", FakeRuntime({(0, 2): ua.StatusCodes.UncertainLastUsableValue}))
+
+    node = VariableNode(
+        node=None, arr=0, elem=2, datatype="UDINT", access_mode="readonly", opcua_type="StatusCode",
+    )
+
+    manager = synchronization.SynchronizationManager(args=None, variable_nodes={}, server=None)
+
+    value = manager._make_read_callback(0, 2, node)(None, None)
+
+    assert value.StatusCode_.is_good()
+    assert value.Value.VariantType == ua.VariantType.StatusCode
+    assert value.Value.Value.value == ua.StatusCodes.UncertainLastUsableValue

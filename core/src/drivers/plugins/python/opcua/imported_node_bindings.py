@@ -80,6 +80,9 @@ SUPPORTED_COLLISION_POLICIES = frozenset(
 )
 
 OPCUA_DATA_TYPE_NODE_IDS = {
+    "StatusCode": ua.NodeId(
+        ua.ObjectIds.StatusCode
+    ),
     "Boolean": ua.NodeId(
         ua.ObjectIds.Boolean
     ),
@@ -381,6 +384,11 @@ async def _create_variable_node(
         status_address=(
             binding.status.address
             if binding.status is not None
+            else None
+        ),
+        opcua_type=(
+            binding.types.opcua
+            if binding.types.opcua == "StatusCode"
             else None
         ),
     )
