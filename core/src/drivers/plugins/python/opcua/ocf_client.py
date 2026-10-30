@@ -70,6 +70,15 @@ SECURE_POLICY_URI = "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256"
 # for servers that cannot set the StatusCode of the value (the NX3008).
 SIGNAL_MODEL_URI = "urn:opas:model:signals"
 
+# A source answering these for the alias's node no longer has it (a new program
+# on the source): the alias is resolved again.
+NODE_GONE = frozenset({ua.StatusCodes.BadNodeIdUnknown, ua.StatusCodes.BadNodeIdInvalid})
+
+
+class SourceMoved(Exception):
+
+    pass
+
 
 def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
     """(ApplicationUri, DiscoveryUrls) of an ApplicationRecordDataType in its
@@ -313,6 +322,9 @@ class OcfClient:
                             # Bad at once: closing the session waits for the peer.
                             self._write_status(item, STATUS_BAD_NO_COMMUNICATION)
                             raise
+
+                        if value.StatusCode.value in NODE_GONE:
+                            raise SourceMoved(f"the source has no node {source.node_id.Identifier} any more")
 
                         self._deliver(item, value)
 

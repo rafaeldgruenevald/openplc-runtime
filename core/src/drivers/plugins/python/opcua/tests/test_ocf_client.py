@@ -321,6 +321,29 @@ def test_a_good_value_takes_the_status_of_its_status_member():
     assert statuses[-1] == ua.StatusCodes.UncertainLastUsableValue
 
 
+def test_a_node_the_source_no_longer_has_is_resolved_again():
+    # a new program on the source moves the node the alias pointed at
+    async def test(value, index):
+        node_id = SimpleNamespace(Identifier="Dev.Gone", NodeIdType=ua.NodeIdType.String)
+
+        client = FakeClient(
+            "opc.tcp://127.0.0.1:48420/ocf-test", "urn:test:source", node_id,
+            config(), None, "urn:me", "c", "k", writer=lambda *a: True,
+        )
+
+        task = asyncio.create_task(client.run())
+
+        await asyncio.sleep(2.5)
+
+        await client.stop()
+
+        task.cancel()
+
+        assert len(client.resolved) >= 2
+
+    run_with_source(test)
+
+
 def test_a_source_that_does_not_answer_is_bad_no_communication(monkeypatch):
     monkeypatch.setattr(ocf_client, "BACKOFF_FIRST_S", 0.05)
 
