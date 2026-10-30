@@ -427,6 +427,11 @@ class BindingTypes:
             IEC_TO_OPCUA_TYPE[iec_type]
         )
 
+        # A StatusCode node (the Status member of a signal) is served from
+        # the UDINT that holds the signal's status in the program.
+        if opcua_type == "StatusCode" and iec_type in STATUS_DATATYPES:
+            expected_opcua_type = "StatusCode"
+
         if opcua_type != expected_opcua_type:
             raise ValueError(
                 f"IEC type {iec_type} requires OPC UA "

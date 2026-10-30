@@ -265,6 +265,62 @@ def test_the_status_of_the_source_is_written_into_the_signal_status():
     run_with_source(test)
 
 
+def test_a_good_value_takes_the_status_of_its_status_member():
+    # a server that cannot set the StatusCode of the value (the NX3008) keeps
+    # the signal's status in the Status member of the OPAS signal model
+    writes = []
+
+    def writer(args, arr, elem, datatype, value):
+        writes.append((arr, elem, datatype, value))
+        return True
+
+    async def main():
+        server = Server()
+        await server.init()
+        server.set_endpoint("opc.tcp://127.0.0.1:48420/ocf-test")
+        index = await server.register_namespace("urn:test:source")
+        model = await server.register_namespace(ocf_client.SIGNAL_MODEL_URI)
+        signal = await server.nodes.objects.add_object(ua.NodeId("Dev.Pressure", index, ua.NodeIdType.String), "Pressure")
+        await signal.add_variable(
+            ua.NodeId("Dev.PT101", index, ua.NodeIdType.String), "AnalogSignal", 3.5, ua.VariantType.Float
+        )
+        member = await signal.add_variable(
+            ua.NodeId("Dev.Status", index, ua.NodeIdType.String), ua.QualifiedName("Status", model),
+            ua.StatusCode(ua.StatusCodes.Good), ua.VariantType.StatusCode,
+        )
+        async with server:
+            node_id = SimpleNamespace(Identifier="Dev.PT101", NodeIdType=ua.NodeIdType.String)
+
+            client = FakeClient(
+                "opc.tcp://127.0.0.1:48420/ocf-test", "urn:test:source", node_id,
+                config_with_status(), None, "urn:me", "c", "k", writer=writer,
+            )
+
+            task = asyncio.create_task(client.run())
+
+            await asyncio.sleep(0.5)
+
+            await member.write_value(
+                ua.Variant(ua.StatusCode(ua.StatusCodes.UncertainLastUsableValue), ua.VariantType.StatusCode)
+            )
+
+            await asyncio.sleep(0.3)
+
+            await client.stop()
+
+            task.cancel()
+
+    asyncio.run(main())
+
+    values = [w[3] for w in writes if w[:3] == (1, 16, "REAL")]
+    statuses = [w[3] for w in writes if w[:3] == (1, 17, "UDINT")]
+
+    # Uncertain keeps the value; the status comes from the member
+    assert values and values[-1] == 3.5
+    assert statuses[0] == ocf_client.STATUS_GOOD
+    assert statuses[-1] == ua.StatusCodes.UncertainLastUsableValue
+
+
 def test_a_source_that_does_not_answer_is_bad_no_communication(monkeypatch):
     monkeypatch.setattr(ocf_client, "BACKOFF_FIRST_S", 0.05)
 

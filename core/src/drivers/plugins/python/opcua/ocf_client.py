@@ -27,6 +27,7 @@ session, it asks for a role only to register).
 """
 
 import asyncio
+import dataclasses
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -65,6 +66,10 @@ SESSION_TIMEOUT_MS = 60000
 
 SECURE_POLICY_URI = "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256"
 
+# The OPAS signal model: its signals carry their status in a Status member too,
+# for servers that cannot set the StatusCode of the value (the NX3008).
+SIGNAL_MODEL_URI = "urn:opas:model:signals"
+
 
 def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
     """(ApplicationUri, DiscoveryUrls) of an ApplicationRecordDataType in its
@@ -84,6 +89,42 @@ def decode_application_record(body: bytes) -> Tuple[str, List[str]]:
 
 class PeerRefused(Exception):
     """The certificate a server announces cannot be read or is not trusted."""
+
+
+async def status_member(client: Client, node: Any) -> Optional[Any]:
+    """The Status member next to a signal's value node, when the server
+    publishes the OPAS signal model; None otherwise."""
+    try:
+        index = await client.get_namespace_index(SIGNAL_MODEL_URI)
+        return await (await node.get_parent()).get_child([ua.QualifiedName("Status", index)])
+    except (ua.UaError, ValueError):
+        return None
+
+
+async def read_signal(client: Client, node: Any, status: Optional[Any]) -> ua.DataValue:
+    """The value of a signal, read with its Status member in the same request
+    when there is one. A Good value takes the member's status (a server that
+    cannot set the StatusCode of the value keeps it there); a value whose own
+    StatusCode is not Good keeps it."""
+    if status is None:
+        return await node.read_data_value(raise_on_bad_status=False)
+    params = ua.ReadParameters()
+    for target in (node, status):
+        item = ua.ReadValueId()
+        item.NodeId = target.nodeid
+        item.AttributeId = ua.AttributeIds.Value
+        params.NodesToRead.append(item)
+    value, member = await client.uaclient.read(params)
+    if (
+        value.StatusCode.is_good()
+        and member.StatusCode.is_good()
+        and member.Value is not None
+        and isinstance(member.Value.Value, ua.StatusCode)
+        and not member.Value.Value.is_good()
+    ):
+        # a DataValue is frozen
+        return dataclasses.replace(value, StatusCode_=member.Value.Value)
+    return value
 
 
 def first_certificate(der: bytes) -> bytes:
@@ -250,6 +291,8 @@ class OcfClient:
                         ua.NodeId(source.node_id.Identifier, index, source.node_id.NodeIdType)
                     )
 
+                    status = await status_member(client, node)
+
                     state.update(connected=True, server=source.server_uri)
 
                     log_info(
@@ -264,7 +307,7 @@ class OcfClient:
                         # not after the request timeout.
                         try:
                             value = await asyncio.wait_for(
-                                node.read_data_value(raise_on_bad_status=False), self.stale_s
+                                read_signal(client, node, status), self.stale_s
                             )
                         except Exception:
                             # Bad at once: closing the session waits for the peer.
