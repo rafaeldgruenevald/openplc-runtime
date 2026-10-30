@@ -270,3 +270,33 @@ def test_the_peer_role_must_be_a_known_role():
 
     with pytest.raises(ValueError):
         SecurityConfig.from_dict({"peer_role": "root"})
+
+
+def test_a_certificate_the_pushed_crl_revokes_is_refused(tmp_path):
+    # the CRLs of a pushed trust list (security.trusted_crls) reach the store
+    ca_key = key()
+    ca_cert = certificate(ca_key, "OPAS CA", ca=True)
+    revoked = certificate(key(), "DCN02", ca_key, "OPAS CA")
+    kept = certificate(key(), "DCN01", ca_key, "OPAS CA")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    crl = (
+        x509.CertificateRevocationListBuilder()
+        .issuer_name(ca_cert.subject)
+        .last_update(now - datetime.timedelta(minutes=1))
+        .next_update(now + datetime.timedelta(days=30))
+        .add_revoked_certificate(
+            x509.RevokedCertificateBuilder().serial_number(revoked.serial_number).revocation_date(now).build()
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+
+    security = manager(tmp_path)
+
+    security.config.security.trusted_crls = [crl.public_bytes(serialization.Encoding.DER)]
+
+    trust = asyncio.run(security.create_trust_store([ca_cert.public_bytes(serialization.Encoding.PEM).decode()]))
+
+    assert trust.validate(kept)
+    assert not trust.validate(revoked)

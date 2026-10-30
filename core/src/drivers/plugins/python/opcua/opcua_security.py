@@ -1322,7 +1322,8 @@ class OpcuaSecurityManager:
                 crl_dir.mkdir()
                 crls = getattr(getattr(self.config, "security", None), "trusted_crls", None) or []
                 for i, crl in enumerate(crls):
-                    (crl_dir / f"crl_{i}.crl").write_bytes(crl)
+                    # the TrustStore loads only files named *der or *pem
+                    (crl_dir / f"crl_{i}.der").write_bytes(crl)
 
                 trust_store = TrustStore([Path(temp_dir)], [crl_dir] if crls else [])
                 await trust_store.load()
